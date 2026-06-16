@@ -23,6 +23,7 @@ type NoteColor = 'blue' | 'olive' | 'sand' | 'slate'
 
 interface ActiveOrder {
   id: string; date: string; product: string; qty: number; pricePerItem: number; note: string;
+  size: Size; includesJacket: boolean; includesPants: boolean;
 }
 interface ArchiveOrder extends ActiveOrder { completedAt: string }
 interface WriteOff {
@@ -152,20 +153,36 @@ const Index = () => {
   }
   const deleteArrival = (id: string) => setArrivals(p => p.filter(a => a.id !== id))
 
-  // Авторасчёт остатка: поступления − расход по выполненным заказам
-  // Расход = кол-во выполненных заказов × perItem материала
-  const calcStock = (mat: Material) => {
-    const totalIn  = arrivals.filter(a => a.materialId === mat.id).reduce((s, a) => s + a.qty, 0)
-    // Расход считаем из writeOffs (списаний), которые привязаны по имени материала
-    const totalOut = writeOffs.filter(w => w.materialName === mat.name).reduce((s, w) => s + w.qty, 0)
-    return Math.max(0, totalIn - totalOut)
+  // Авторасчёт расхода материала по имени через выполненные заказы:
+  // для каждого заказа смотрим куртку/штаны + размер → берём perItem из соответствующих fabricLines/hwLines
+  const calcUsedByOrders = (matName: string, completedOrders: ArchiveOrder[]) => {
+    return completedOrders.reduce((total, order) => {
+      let consumed = 0
+      const sz = order.size || 'M'
+      // Ищем материал в куртке
+      if (order.includesJacket) {
+        const jf = jacketFabricLines.find(l => l.name === matName)
+        if (jf) consumed += jf.meters * order.qty
+        const jh = jacketHardwareLines.find(l => l.name === matName)
+        if (jh) consumed += (jh.unit === 'м' ? jh.meters : jh.qty) * order.qty
+      }
+      // Ищем материал в штанах
+      if (order.includesPants) {
+        const pf = pantsFabricLines.find(l => l.name === matName)
+        if (pf) consumed += pf.meters * order.qty
+        const ph = pantsHardwareLines.find(l => l.name === matName)
+        if (ph) consumed += (ph.unit === 'м' ? ph.meters : ph.qty) * order.qty
+      }
+      return total + consumed
+    }, 0)
   }
-  const calcUsed = (mat: Material) => {
-    return writeOffs.filter(w => w.materialName === mat.name).reduce((s, w) => s + w.qty, 0)
-  }
-  const calcTotalIn = (mat: Material) => {
-    return arrivals.filter(a => a.materialId === mat.id).reduce((s, a) => s + a.qty, 0)
-  }
+
+  const calcTotalIn  = (mat: Material) =>
+    arrivals.filter(a => a.materialId === mat.id).reduce((s, a) => s + a.qty, 0)
+  const calcUsed     = (mat: Material) =>
+    calcUsedByOrders(mat.name, archiveOrders)
+  const calcStock    = (mat: Material) =>
+    Math.max(0, calcTotalIn(mat) - calcUsed(mat))
 
   // ── Себестоимость — прямые таблицы (куртка / штаны) ────────────────────────
   const [garment, setGarment] = useState<GarmentType>('jacket')
@@ -277,16 +294,20 @@ const Index = () => {
   // ── Заказы (активные) ──────────────────────────────────────────────────────
   const today = new Date().toISOString().split('T')[0]
   const [activeOrders, setActiveOrders] = useState<ActiveOrder[]>(
-    initialOrders.map(o => ({ ...o, note: '' }))
+    initialOrders.map(o => ({ ...o, note: '', size: 'M' as Size, includesJacket: true, includesPants: true }))
   )
   const [orderModal, setOrderModal] = useState(false)
-  const [orderForm, setOrderForm] = useState<Omit<ActiveOrder,'id'>>({ date: today, product: '', qty: 1, pricePerItem: 0, note: '' })
+  const emptyOrderForm = (): Omit<ActiveOrder,'id'> => ({
+    date: today, product: '', qty: 1, pricePerItem: 0, note: '',
+    size: 'M', includesJacket: true, includesPants: true,
+  })
+  const [orderForm, setOrderForm] = useState<Omit<ActiveOrder,'id'>>(emptyOrderForm())
 
   const saveActiveOrder = () => {
     if (!orderForm.product.trim()) return
     setActiveOrders(p => [{ ...orderForm, id: uid() }, ...p])
     setOrderModal(false)
-    setOrderForm({ date: today, product: '', qty: 1, pricePerItem: 0, note: '' })
+    setOrderForm(emptyOrderForm())
   }
   const deleteActiveOrder = (id: string) => setActiveOrders(p => p.filter(o => o.id !== id))
 
@@ -1154,7 +1175,7 @@ const Index = () => {
         })()}
 
         {tab === 'orders' && (
-          <Section title="Активные заказы" subtitle="Нажмите «Выполнен» — заказ автоматически уйдёт в архив">
+          <Section title="Активные заказы" subtitle="Нажмите «Выполнен» — заказ уйдёт в архив и спишет материалы">
             <div className="mb-4 flex items-center justify-between">
               <div className="flex items-center gap-2 rounded-xl border border-border bg-secondary/50 px-4 py-2 text-sm text-muted-foreground">
                 <Icon name="Info" size={14} />
@@ -1169,41 +1190,46 @@ const Index = () => {
               <div className="rounded-2xl border border-dashed border-border py-16 text-center">
                 <Icon name="ShoppingBag" size={32} className="mx-auto mb-3 text-muted-foreground/40" />
                 <div className="text-muted-foreground">Нет активных заказов</div>
-                <div className="mt-1 text-sm text-muted-foreground/60">Все выполненные заказы перенесены в архив</div>
               </div>
             ) : (
               <div className="space-y-3">
-                {activeOrders.map((o, i) => (
-                  <div key={o.id} className="animate-fade-up rounded-2xl border border-border bg-card p-5" style={{ animationDelay: `${i * 40}ms` }}>
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
+                {activeOrders.map((o, i) => {
+                  const what = [o.includesJacket && 'Куртка', o.includesPants && 'Штаны'].filter(Boolean).join(' + ') || 'не указано'
+                  return (
+                    <div key={o.id} className="animate-fade-up rounded-2xl border border-border bg-card p-5" style={{ animationDelay: `${i * 40}ms` }}>
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-medium text-foreground">{o.product}</span>
+                            {/* Размер */}
+                            <span className="inline-flex h-6 w-7 items-center justify-center rounded-md bg-accent text-xs font-semibold text-accent-foreground">{o.size}</span>
+                            {/* Состав */}
+                            <span className="rounded-full border border-border bg-secondary/60 px-2.5 py-0.5 text-xs text-muted-foreground">{what}</span>
+                            <span className="rounded-full bg-secondary px-2.5 py-0.5 text-xs text-muted-foreground">{o.qty} шт</span>
+                          </div>
+                          <div className="mt-1.5 flex flex-wrap items-center gap-3 text-sm">
+                            <span className="text-muted-foreground">{new Date(o.date).toLocaleDateString('ru-RU', { day: '2-digit', month: 'long' })}</span>
+                            <span className="font-medium tabular-nums text-foreground">{fmt(o.qty * o.pricePerItem)}</span>
+                            {o.note && <span className="text-muted-foreground italic">{o.note}</span>}
+                          </div>
+                        </div>
                         <div className="flex items-center gap-2">
-                          <span className="font-medium text-foreground">{o.product}</span>
-                          <span className="rounded-full bg-secondary px-2.5 py-0.5 text-xs text-muted-foreground">{o.qty} шт</span>
+                          <button onClick={() => completeOrder(o.id)}
+                            className="flex items-center gap-1.5 rounded-xl bg-success/15 px-3 py-2 text-sm font-medium text-success hover:bg-success/25 transition-colors">
+                            <Icon name="CheckCircle" size={15} />Выполнен
+                          </button>
+                          <button onClick={() => deleteActiveOrder(o.id)}
+                            className="flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-background text-muted-foreground hover:text-destructive transition-colors">
+                            <Icon name="Trash2" size={14} />
+                          </button>
                         </div>
-                        <div className="mt-1 flex items-center gap-3 text-sm text-muted-foreground">
-                          <span>{new Date(o.date).toLocaleDateString('ru-RU', { day: '2-digit', month: 'long' })}</span>
-                          <span className="font-medium tabular-nums text-foreground">{fmt(o.qty * o.pricePerItem)}</span>
-                        </div>
-                        {o.note && <div className="mt-1 text-sm text-muted-foreground italic">{o.note}</div>}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button onClick={() => completeOrder(o.id)}
-                          className="flex items-center gap-1.5 rounded-xl bg-success/15 px-3 py-2 text-sm font-medium text-success hover:bg-success/25 transition-colors">
-                          <Icon name="CheckCircle" size={15} />Выполнен
-                        </button>
-                        <button onClick={() => deleteActiveOrder(o.id)}
-                          className="flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-background text-muted-foreground hover:text-destructive transition-colors">
-                          <Icon name="Trash2" size={14} />
-                        </button>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
 
-            {/* Итого по активным */}
             {activeOrders.length > 0 && (
               <div className="mt-4 grid gap-3 rounded-2xl border border-border bg-secondary/40 p-5 sm:grid-cols-3">
                 <div><div className="text-xs text-muted-foreground uppercase tracking-wider">Выручка</div><div className="mt-1 font-display text-2xl font-medium">{fmt(activeRevenue)}</div></div>
@@ -1248,91 +1274,55 @@ const Index = () => {
 
         {/* ══ АРХИВ ══ */}
         {tab === 'archive' && (
-          <Section title="Архив" subtitle="Выполненные заказы и списания материалов">
-            <div className="flex gap-1 rounded-xl border border-border bg-card p-1 w-fit">
-              {[{ id: 'orders', label: 'Заказы', icon: 'ShoppingBag' }, { id: 'writeoffs', label: 'Списания', icon: 'Minus' }].map(at => (
-                <button key={at.id} onClick={() => setArchiveTab(at.id as 'orders' | 'writeoffs')}
-                  className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all ${archiveTab===at.id?'bg-primary text-primary-foreground':'text-muted-foreground hover:bg-secondary'}`}>
-                  <Icon name={at.icon} size={15} />{at.label}
-                </button>
-              ))}
-            </div>
-
-            {archiveTab === 'orders' && (
-              <div>
-                {archiveOrders.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-border py-16 text-center">
-                    <Icon name="Archive" size={32} className="mx-auto mb-3 text-muted-foreground/40" />
-                    <div className="text-muted-foreground">Архив пуст</div>
-                    <div className="mt-1 text-sm text-muted-foreground/60">Выполненные заказы будут появляться здесь</div>
-                  </div>
-                ) : (
-                  <div className="overflow-hidden rounded-2xl border border-border bg-card">
-                    <table className="w-full text-sm">
-                      <thead><tr className="border-b border-border bg-secondary/50 text-left text-xs uppercase tracking-wider text-muted-foreground">
-                        <th className="px-5 py-3 font-medium">Выполнен</th>
-                        <th className="px-5 py-3 font-medium">Изделие</th>
-                        <th className="px-5 py-3 text-right font-medium">Кол-во</th>
-                        <th className="px-5 py-3 text-right font-medium">Сумма</th>
-                        <th className="px-5 py-3 font-medium">Примечание</th>
-                        <th className="px-5 py-3" />
-                      </tr></thead>
-                      <tbody>
-                        {archiveOrders.map(o => (
-                          <tr key={o.id} className="border-b border-border/60 last:border-0 hover:bg-secondary/30">
-                            <td className="px-5 py-3.5 tabular-nums text-muted-foreground">{new Date(o.completedAt).toLocaleDateString('ru-RU', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
-                            <td className="px-5 py-3.5 font-medium text-foreground">{o.product}</td>
-                            <td className="px-5 py-3.5 text-right tabular-nums">{o.qty}</td>
-                            <td className="px-5 py-3.5 text-right font-medium tabular-nums">{fmt(o.qty * o.pricePerItem)}</td>
-                            <td className="px-5 py-3.5 text-muted-foreground">{o.note || '—'}</td>
-                            <td className="px-5 py-3.5 text-right">
-                              <button onClick={() => deleteArchiveOrder(o.id)} className="text-muted-foreground hover:text-destructive transition-colors"><Icon name="Trash2" size={14} /></button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                      <tfoot><tr className="bg-secondary/50 font-medium">
-                        <td className="px-5 py-3.5" colSpan={2}>Итого в архиве</td>
-                        <td className="px-5 py-3.5 text-right tabular-nums">{archiveOrders.reduce((s,o) => s + o.qty, 0)}</td>
-                        <td className="px-5 py-3.5 text-right tabular-nums text-accent">{fmt(archiveOrders.reduce((s,o) => s + o.qty * o.pricePerItem, 0))}</td>
-                        <td colSpan={2} />
-                      </tr></tfoot>
-                    </table>
-                  </div>
-                )}
+          <Section title="Архив заказов" subtitle="Выполненные заказы — основа для расчёта остатков материалов">
+            {archiveOrders.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-border py-16 text-center">
+                <Icon name="Archive" size={32} className="mx-auto mb-3 text-muted-foreground/40" />
+                <div className="text-muted-foreground">Архив пуст</div>
+                <div className="mt-1 text-sm text-muted-foreground/60">Отметьте заказы как «Выполнен» — они появятся здесь и спишут материалы</div>
               </div>
-            )}
-
-            {archiveTab === 'writeoffs' && (
-              <div className="space-y-4">
-                <div className="flex justify-end">
-                  <button onClick={() => setWoModal(true)} className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-80">
-                    <Icon name="Plus" size={16} />Добавить списание
-                  </button>
-                </div>
-                <div className="overflow-hidden rounded-2xl border border-border bg-card">
-                  <table className="w-full text-sm">
-                    <thead><tr className="border-b border-border bg-secondary/50 text-left text-xs uppercase tracking-wider text-muted-foreground">
-                      <th className="px-5 py-3 font-medium">Дата</th>
-                      <th className="px-5 py-3 font-medium">Материал</th>
-                      <th className="px-5 py-3 text-right font-medium">Количество</th>
-                      <th className="px-5 py-3 font-medium">Причина</th>
-                      <th className="px-5 py-3" />
-                    </tr></thead>
-                    <tbody>
-                      {writeOffs.length === 0 && <tr><td colSpan={5} className="px-5 py-8 text-center text-muted-foreground">Нет списаний</td></tr>}
-                      {writeOffs.map(w => (
-                        <tr key={w.id} className="border-b border-border/60 last:border-0 hover:bg-secondary/30">
-                          <td className="px-5 py-3.5 tabular-nums text-muted-foreground">{new Date(w.date).toLocaleDateString('ru-RU', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
-                          <td className="px-5 py-3.5 font-medium text-foreground">{w.materialName}</td>
-                          <td className="px-5 py-3.5 text-right tabular-nums">{w.qty} {w.unit}</td>
-                          <td className="px-5 py-3.5 text-muted-foreground">{w.reason || '—'}</td>
-                          <td className="px-5 py-3.5 text-right"><button onClick={() => deleteWo(w.id)} className="text-muted-foreground hover:text-destructive transition-colors"><Icon name="Trash2" size={14} /></button></td>
+            ) : (
+              <div className="overflow-hidden rounded-2xl border border-border bg-card">
+                <table className="w-full text-sm">
+                  <thead><tr className="border-b border-border bg-secondary/50 text-left text-xs uppercase tracking-wider text-muted-foreground">
+                    <th className="px-5 py-3 font-medium">Дата выполнения</th>
+                    <th className="px-5 py-3 font-medium">Изделие</th>
+                    <th className="px-5 py-3 font-medium">Размер / Состав</th>
+                    <th className="px-5 py-3 text-right font-medium">Кол-во</th>
+                    <th className="px-5 py-3 text-right font-medium">Сумма</th>
+                    <th className="px-5 py-3 font-medium">Примечание</th>
+                    <th className="px-5 py-3" />
+                  </tr></thead>
+                  <tbody>
+                    {archiveOrders.map(o => {
+                      const what = [o.includesJacket && 'Куртка', o.includesPants && 'Штаны'].filter(Boolean).join('+') || '—'
+                      return (
+                        <tr key={o.id} className="border-b border-border/60 last:border-0 hover:bg-secondary/30">
+                          <td className="px-5 py-3.5 tabular-nums text-muted-foreground">{new Date(o.completedAt).toLocaleDateString('ru-RU', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+                          <td className="px-5 py-3.5 font-medium text-foreground">{o.product}</td>
+                          <td className="px-5 py-3.5">
+                            <div className="flex items-center gap-2">
+                              <span className="inline-flex h-6 w-7 items-center justify-center rounded-md bg-accent/20 text-xs font-semibold text-accent">{o.size || 'M'}</span>
+                              <span className="text-muted-foreground text-xs">{what}</span>
+                            </div>
+                          </td>
+                          <td className="px-5 py-3.5 text-right tabular-nums">{o.qty}</td>
+                          <td className="px-5 py-3.5 text-right font-medium tabular-nums">{fmt(o.qty * o.pricePerItem)}</td>
+                          <td className="px-5 py-3.5 text-muted-foreground">{o.note || '—'}</td>
+                          <td className="px-5 py-3.5 text-right">
+                            <button onClick={() => deleteArchiveOrder(o.id)} className="text-muted-foreground hover:text-destructive transition-colors"><Icon name="Trash2" size={14} /></button>
+                          </td>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      )
+                    })}
+                  </tbody>
+                  <tfoot><tr className="bg-secondary/50 font-medium">
+                    <td className="px-5 py-3.5" colSpan={3}>Итого в архиве</td>
+                    <td className="px-5 py-3.5 text-right tabular-nums">{archiveOrders.reduce((s,o) => s + o.qty, 0)}</td>
+                    <td className="px-5 py-3.5 text-right tabular-nums text-accent">{fmt(archiveOrders.reduce((s,o) => s + o.qty * o.pricePerItem, 0))}</td>
+                    <td colSpan={2} />
+                  </tr></tfoot>
+                </table>
               </div>
             )}
           </Section>
@@ -1419,11 +1409,64 @@ const Index = () => {
       {orderModal && (
         <Modal title="Новый заказ" onClose={() => setOrderModal(false)} onSave={saveActiveOrder}>
           <div className="grid gap-3 sm:grid-cols-2">
-            <div className="sm:col-span-2"><FInput label="Изделие" value={orderForm.product} onChange={v => setOrderForm(p => ({ ...p, product: v }))} placeholder="Костюм «Таймень»" /></div>
-            <FInput label="Дата"              type="date"   value={orderForm.date}         onChange={v => setOrderForm(p => ({ ...p, date: v }))} />
-            <FInput label="Количество"        type="number" value={orderForm.qty}          onChange={v => setOrderForm(p => ({ ...p, qty: Number(v) }))} />
-            <FInput label="Цена за изделие (₽)" type="number" value={orderForm.pricePerItem} onChange={v => setOrderForm(p => ({ ...p, pricePerItem: Number(v) }))} />
-            <div className="sm:col-span-2"><FInput label="Примечание (клиент, регион...)" value={orderForm.note} onChange={v => setOrderForm(p => ({ ...p, note: v }))} placeholder="Иванов, Новосибирск" /></div>
+            {/* Название изделия */}
+            <div className="sm:col-span-2">
+              <FInput label="Изделие" value={orderForm.product} onChange={v => setOrderForm(p => ({ ...p, product: v }))} placeholder="Костюм «Таймень»" />
+            </div>
+
+            {/* Размер */}
+            <div>
+              <span className="mb-1 block text-xs text-muted-foreground">Размер</span>
+              <div className="flex gap-1.5">
+                {sizes.map(s => (
+                  <button key={s} type="button" onClick={() => setOrderForm(p => ({ ...p, size: s }))}
+                    className={`flex h-10 flex-1 items-center justify-center rounded-xl text-sm font-semibold border transition-all ${
+                      orderForm.size === s
+                        ? 'border-accent bg-accent text-accent-foreground'
+                        : 'border-border bg-secondary/50 text-muted-foreground hover:bg-secondary'
+                    }`}>{s}</button>
+                ))}
+              </div>
+            </div>
+
+            {/* Состав заказа */}
+            <div>
+              <span className="mb-1 block text-xs text-muted-foreground">Что входит в заказ</span>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setOrderForm(p => ({ ...p, includesJacket: !p.includesJacket }))}
+                  className={`flex flex-1 items-center justify-center gap-2 rounded-xl border py-2.5 text-sm font-medium transition-all ${
+                    orderForm.includesJacket ? 'border-sky-300 bg-sky-100 text-sky-700' : 'border-border bg-secondary/50 text-muted-foreground'
+                  }`}>
+                  <Icon name="Shirt" size={15} />Куртка
+                  {orderForm.includesJacket && <Icon name="Check" size={13} />}
+                </button>
+                <button type="button" onClick={() => setOrderForm(p => ({ ...p, includesPants: !p.includesPants }))}
+                  className={`flex flex-1 items-center justify-center gap-2 rounded-xl border py-2.5 text-sm font-medium transition-all ${
+                    orderForm.includesPants ? 'border-violet-300 bg-violet-100 text-violet-700' : 'border-border bg-secondary/50 text-muted-foreground'
+                  }`}>
+                  <Icon name="PersonStanding" size={15} />Штаны
+                  {orderForm.includesPants && <Icon name="Check" size={13} />}
+                </button>
+              </div>
+            </div>
+
+            <FInput label="Дата" type="date" value={orderForm.date} onChange={v => setOrderForm(p => ({ ...p, date: v }))} />
+            <FInput label="Количество, шт" type="number" value={orderForm.qty} onChange={v => setOrderForm(p => ({ ...p, qty: Number(v) }))} />
+            <FInput label="Цена за изделие, ₽" type="number" value={orderForm.pricePerItem} onChange={v => setOrderForm(p => ({ ...p, pricePerItem: Number(v) }))} />
+
+            {/* Итог */}
+            {orderForm.qty > 0 && orderForm.pricePerItem > 0 && (
+              <div className="flex items-center rounded-xl border border-accent/30 bg-accent/[0.06] px-4 py-3">
+                <div>
+                  <div className="text-xs text-muted-foreground">Сумма заказа</div>
+                  <div className="font-display text-2xl font-medium text-accent">{fmt(orderForm.qty * orderForm.pricePerItem)}</div>
+                </div>
+              </div>
+            )}
+
+            <div className="sm:col-span-2">
+              <FInput label="Примечание (клиент, регион...)" value={orderForm.note} onChange={v => setOrderForm(p => ({ ...p, note: v }))} placeholder="Иванов, Новосибирск" />
+            </div>
           </div>
         </Modal>
       )}
