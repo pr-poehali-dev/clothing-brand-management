@@ -130,38 +130,100 @@ const Index = () => {
         )}
 
         {tab === 'materials' && (
-          <Section title="Ткань и фурнитура" subtitle="Цены, остатки и расход на одно изделие">
-            <div className="overflow-hidden rounded-2xl border border-border bg-card">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border bg-secondary/50 text-left text-xs uppercase tracking-wider text-muted-foreground">
-                    <th className="px-5 py-3 font-medium">Наименование</th>
-                    <th className="px-5 py-3 font-medium">Тип</th>
-                    <th className="px-5 py-3 text-right font-medium">Цена</th>
-                    <th className="px-5 py-3 text-right font-medium">Остаток</th>
-                    <th className="px-5 py-3 text-right font-medium">Расход / шт</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {materials.map((m) => (
-                    <tr key={m.id} className="border-b border-border/60 last:border-0 hover:bg-secondary/30">
-                      <td className="px-5 py-3.5 font-medium text-foreground">{m.name}</td>
-                      <td className="px-5 py-3.5">
-                        <span className={`rounded-full px-2.5 py-1 text-xs ${m.type === 'Ткань' ? 'bg-accent/15 text-accent' : 'bg-secondary text-secondary-foreground'}`}>
-                          {m.type}
-                        </span>
-                      </td>
-                      <td className="px-5 py-3.5 text-right tabular-nums">{fmt(m.pricePerUnit)}/{m.unit}</td>
-                      <td className="px-5 py-3.5 text-right tabular-nums">
-                        <span className={m.stock < 70 ? 'text-destructive' : 'text-muted-foreground'}>
-                          {m.stock} {m.unit}
-                        </span>
-                      </td>
-                      <td className="px-5 py-3.5 text-right tabular-nums text-muted-foreground">{m.perItem} {m.unit}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          <Section title="Ткань и фурнитура" subtitle="Остатки, расход и данные поставщиков">
+            {/* Карточки материалов */}
+            <div className="space-y-3">
+              {materials.map((m, i) => {
+                const stockPct = Math.round((m.stock / m.maxStock) * 100);
+                const usedPct = Math.round((m.usedQty / (m.stock + m.usedQty)) * 100);
+                const isLow = stockPct < 35;
+                return (
+                  <div
+                    key={m.id}
+                    className="animate-fade-up rounded-2xl border border-border bg-card p-5"
+                    style={{ animationDelay: `${i * 50}ms` }}
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                      {/* Левый блок: название + тип + цена */}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-medium text-foreground">{m.name}</span>
+                          <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${m.type === 'Ткань' ? 'bg-accent/15 text-accent' : 'bg-secondary text-secondary-foreground'}`}>
+                            {m.type}
+                          </span>
+                          {isLow && (
+                            <span className="flex items-center gap-1 rounded-full bg-destructive/10 px-2.5 py-0.5 text-xs font-medium text-destructive">
+                              <Icon name="AlertTriangle" size={11} /> Мало
+                            </span>
+                          )}
+                        </div>
+                        <div className="mt-1 text-sm text-muted-foreground">
+                          {fmt(m.pricePerUnit)}/{m.unit} · расход {m.perItem} {m.unit}/изд.
+                        </div>
+                      </div>
+
+                      {/* Правый блок: поставщик */}
+                      <div className="shrink-0 rounded-xl border border-border bg-secondary/40 px-4 py-2.5 text-sm">
+                        <div className="font-medium text-foreground">{m.supplier.name}</div>
+                        <div className="mt-0.5 flex flex-col gap-0.5 text-xs text-muted-foreground">
+                          {m.supplier.site && (
+                            <span className="flex items-center gap-1">
+                              <Icon name="Globe" size={11} />
+                              {m.supplier.site}
+                            </span>
+                          )}
+                          {m.supplier.contact && (
+                            <span className="flex items-center gap-1">
+                              <Icon name="Phone" size={11} />
+                              {m.supplier.contact}
+                            </span>
+                          )}
+                          <span className="flex items-center gap-1">
+                            <Icon name="Truck" size={11} />
+                            доставка {m.supplier.deliveryDays} дн.
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Визуальный учёт: остаток + расход */}
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      {/* Остаток */}
+                      <div>
+                        <div className="mb-1.5 flex items-center justify-between text-xs">
+                          <span className="text-muted-foreground">Остаток на складе</span>
+                          <span className={`font-medium tabular-nums ${isLow ? 'text-destructive' : 'text-foreground'}`}>
+                            {m.stock} / {m.maxStock} {m.unit}
+                          </span>
+                        </div>
+                        <div className="h-2 overflow-hidden rounded-full bg-secondary">
+                          <div
+                            className={`h-full rounded-full transition-all ${isLow ? 'bg-destructive' : 'bg-success'}`}
+                            style={{ width: `${stockPct}%` }}
+                          />
+                        </div>
+                        <div className="mt-1 text-right text-xs text-muted-foreground">{stockPct}%</div>
+                      </div>
+                      {/* Расход */}
+                      <div>
+                        <div className="mb-1.5 flex items-center justify-between text-xs">
+                          <span className="text-muted-foreground">Израсходовано</span>
+                          <span className="font-medium tabular-nums text-foreground">
+                            {m.usedQty} {m.unit}
+                          </span>
+                        </div>
+                        <div className="h-2 overflow-hidden rounded-full bg-secondary">
+                          <div
+                            className="h-full rounded-full bg-accent/70 transition-all"
+                            style={{ width: `${usedPct}%` }}
+                          />
+                        </div>
+                        <div className="mt-1 text-right text-xs text-muted-foreground">{usedPct}% от закупки</div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </Section>
         )}

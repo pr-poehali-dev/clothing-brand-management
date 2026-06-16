@@ -1,11 +1,21 @@
+export interface Supplier {
+  name: string;
+  site?: string;
+  contact?: string;
+  deliveryDays: number;
+}
+
 export interface Material {
   id: string;
   name: string;
   type: 'Ткань' | 'Фурнитура';
   unit: string;
   pricePerUnit: number;
-  stock: number;
+  stock: number;       // текущий остаток
+  maxStock: number;    // максимальный запас (для прогресс-бара)
+  usedQty: number;     // израсходовано всего
   perItem: number;
+  supplier: Supplier;
 }
 
 export interface Order {
@@ -24,13 +34,41 @@ export interface CostItem {
 export const products = ['Костюм «Таймень»', 'Костюм «Сёмга»', 'Костюм «Налим»'] as const;
 
 export const materials: Material[] = [
-  { id: 'm1', name: 'Мембрана 3-слойная', type: 'Ткань', unit: 'м', pricePerUnit: 1450, stock: 84, perItem: 3.2 },
-  { id: 'm2', name: 'Флис-подкладка', type: 'Ткань', unit: 'м', pricePerUnit: 620, stock: 120, perItem: 2.5 },
-  { id: 'm3', name: 'Сетка вентиляционная', type: 'Ткань', unit: 'м', pricePerUnit: 340, stock: 60, perItem: 0.8 },
-  { id: 'f1', name: 'Молния влагозащитная YKK', type: 'Фурнитура', unit: 'шт', pricePerUnit: 280, stock: 45, perItem: 3 },
-  { id: 'f2', name: 'Фастекс усиленный', type: 'Фурнитура', unit: 'шт', pricePerUnit: 35, stock: 200, perItem: 6 },
-  { id: 'f3', name: 'Стопор-фиксатор', type: 'Фурнитура', unit: 'шт', pricePerUnit: 18, stock: 320, perItem: 4 },
-  { id: 'f4', name: 'Светоотражающий кант', type: 'Фурнитура', unit: 'м', pricePerUnit: 90, stock: 75, perItem: 2.1 },
+  {
+    id: 'm1', name: 'Мембрана 3-слойная', type: 'Ткань', unit: 'м',
+    pricePerUnit: 1450, stock: 84, maxStock: 150, usedQty: 66, perItem: 3.2,
+    supplier: { name: 'ТекстильПро', site: 'textilpro.ru', contact: '+7 495 123-45-67', deliveryDays: 5 },
+  },
+  {
+    id: 'm2', name: 'Флис-подкладка', type: 'Ткань', unit: 'м',
+    pricePerUnit: 620, stock: 120, maxStock: 200, usedQty: 80, perItem: 2.5,
+    supplier: { name: 'ТекстильПро', site: 'textilpro.ru', contact: '+7 495 123-45-67', deliveryDays: 5 },
+  },
+  {
+    id: 'm3', name: 'Сетка вентиляционная', type: 'Ткань', unit: 'м',
+    pricePerUnit: 340, stock: 60, maxStock: 100, usedQty: 40, perItem: 0.8,
+    supplier: { name: 'Фабрика Сеток', site: 'sitmesh.ru', contact: '+7 812 987-65-43', deliveryDays: 7 },
+  },
+  {
+    id: 'f1', name: 'Молния влагозащитная YKK', type: 'Фурнитура', unit: 'шт',
+    pricePerUnit: 280, stock: 45, maxStock: 100, usedQty: 55, perItem: 3,
+    supplier: { name: 'YKK Russia', site: 'ykk.com/ru', contact: '+7 495 300-10-20', deliveryDays: 10 },
+  },
+  {
+    id: 'f2', name: 'Фастекс усиленный', type: 'Фурнитура', unit: 'шт',
+    pricePerUnit: 35, stock: 200, maxStock: 400, usedQty: 200, perItem: 6,
+    supplier: { name: 'АрматураОпт', site: 'armopt.ru', contact: '+7 916 555-00-11', deliveryDays: 3 },
+  },
+  {
+    id: 'f3', name: 'Стопор-фиксатор', type: 'Фурнитура', unit: 'шт',
+    pricePerUnit: 18, stock: 320, maxStock: 500, usedQty: 180, perItem: 4,
+    supplier: { name: 'АрматураОпт', site: 'armopt.ru', contact: '+7 916 555-00-11', deliveryDays: 3 },
+  },
+  {
+    id: 'f4', name: 'Светоотражающий кант', type: 'Фурнитура', unit: 'м',
+    pricePerUnit: 90, stock: 75, maxStock: 150, usedQty: 75, perItem: 2.1,
+    supplier: { name: 'СветоДеталь', site: 'svetodetal.ru', contact: '+7 499 777-33-22', deliveryDays: 4 },
+  },
 ];
 
 export const logistics = {
