@@ -109,6 +109,9 @@ const Index = () => {
   const setS = (key: keyof Supplier, val: string) =>
     setMatForm(p => ({ ...p, supplier: { ...p.supplier, [key]: key === 'deliveryDays' ? Number(val) : val } }))
 
+  // ── Себестоимость — прямые таблицы (куртка / штаны) ────────────────────────
+  const [garment, setGarment] = useState<GarmentType>('jacket')
+
   // ── Теги тканей для куртки и штанов ─────────────────────────────────────────
   const fabricsFromMaterials = matList.filter(m => m.type === 'Ткань')
   const [jacketFabrics, setJacketFabrics] = useState<string[]>(['m1', 'm2'])
@@ -118,9 +121,6 @@ const Index = () => {
   const setActiveFabrics = garment === 'jacket' ? setJacketFabrics : setPantsFabrics
   const toggleFabric = (id: string) =>
     setActiveFabrics(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id])
-
-  // ── Себестоимость — прямые таблицы (куртка / штаны) ────────────────────────
-  const [garment, setGarment] = useState<GarmentType>('jacket')
 
   const [jacketCosts, setJacketCosts] = useState<SizeCostTable>({
     S:  defaultRow(3800, 1200, 1600),
