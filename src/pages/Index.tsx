@@ -28,6 +28,10 @@ interface ArchiveOrder extends ActiveOrder { completedAt: string }
 interface WriteOff {
   id: string; date: string; materialName: string; qty: number; unit: string; reason: string;
 }
+// Поступление товара на склад
+interface Arrival {
+  id: string; date: string; materialId: string; qty: number; pricePerUnit: number; note: string;
+}
 // ── Тип таблицы себестоимости (куртка / штаны) ───────────────────────────────
 type GarmentType = 'jacket' | 'pants'
 
@@ -121,6 +125,47 @@ const Index = () => {
     setMatForm(p => ({ ...p, [key]: ['pricePerUnit','stock','maxStock','usedQty','perItem'].includes(key) ? Number(val) : val }))
   const setS = (key: keyof Supplier, val: string) =>
     setMatForm(p => ({ ...p, supplier: { ...p.supplier, [key]: key === 'deliveryDays' ? Number(val) : val } }))
+
+  // ── Поступления ─────────────────────────────────────────────────────────────
+  const [arrivals, setArrivals] = useState<Arrival[]>([
+    { id: uid(), date: '2026-06-01', materialId: 'm1', qty: 50, pricePerUnit: 1450, note: 'Начальный остаток' },
+    { id: uid(), date: '2026-06-01', materialId: 'm2', qty: 80, pricePerUnit: 620,  note: 'Начальный остаток' },
+    { id: uid(), date: '2026-06-01', materialId: 'm3', qty: 40, pricePerUnit: 340,  note: 'Начальный остаток' },
+    { id: uid(), date: '2026-06-01', materialId: 'f1', qty: 60, pricePerUnit: 280,  note: 'Начальный остаток' },
+    { id: uid(), date: '2026-06-01', materialId: 'f2', qty: 200, pricePerUnit: 35,  note: 'Начальный остаток' },
+    { id: uid(), date: '2026-06-01', materialId: 'f3', qty: 300, pricePerUnit: 18,  note: 'Начальный остаток' },
+    { id: uid(), date: '2026-06-01', materialId: 'f4', qty: 80, pricePerUnit: 90,   note: 'Начальный остаток' },
+  ])
+  const [arrivalModal, setArrivalModal] = useState(false)
+  const [arrivalForm, setArrivalForm] = useState<Omit<Arrival,'id'>>({ date: '', materialId: '', qty: 0, pricePerUnit: 0, note: '' })
+  const [selectedMatId, setSelectedMatId] = useState<string | null>(null) // для фильтрации истории
+
+  const openArrivalModal = (matId?: string) => {
+    const mat = matId ? matList.find(m => m.id === matId) : undefined
+    setArrivalForm({ date: today, materialId: matId || '', qty: 0, pricePerUnit: mat?.pricePerUnit || 0, note: '' })
+    setArrivalModal(true)
+  }
+  const saveArrival = () => {
+    if (!arrivalForm.materialId || arrivalForm.qty <= 0) return
+    setArrivals(p => [{ ...arrivalForm, id: uid() }, ...p])
+    setArrivalModal(false)
+  }
+  const deleteArrival = (id: string) => setArrivals(p => p.filter(a => a.id !== id))
+
+  // Авторасчёт остатка: поступления − расход по выполненным заказам
+  // Расход = кол-во выполненных заказов × perItem материала
+  const calcStock = (mat: Material) => {
+    const totalIn  = arrivals.filter(a => a.materialId === mat.id).reduce((s, a) => s + a.qty, 0)
+    // Расход считаем из writeOffs (списаний), которые привязаны по имени материала
+    const totalOut = writeOffs.filter(w => w.materialName === mat.name).reduce((s, w) => s + w.qty, 0)
+    return Math.max(0, totalIn - totalOut)
+  }
+  const calcUsed = (mat: Material) => {
+    return writeOffs.filter(w => w.materialName === mat.name).reduce((s, w) => s + w.qty, 0)
+  }
+  const calcTotalIn = (mat: Material) => {
+    return arrivals.filter(a => a.materialId === mat.id).reduce((s, a) => s + a.qty, 0)
+  }
 
   // ── Себестоимость — прямые таблицы (куртка / штаны) ────────────────────────
   const [garment, setGarment] = useState<GarmentType>('jacket')
@@ -580,65 +625,143 @@ const Index = () => {
 
         {/* ══ МАТЕРИАЛЫ ══ */}
         {tab === 'materials' && (
-          <Section title="Ткань и фурнитура" subtitle="Остатки, расход и данные поставщиков">
-            <div className="mb-4 flex justify-end">
-              <button onClick={openAddMat} className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-80">
-                <Icon name="Plus" size={16} />Добавить материал
-              </button>
+          <Section title="Ткань и фурнитура" subtitle="Остаток рассчитывается автоматически: поступления − списания">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2 rounded-xl border border-border bg-secondary/40 px-4 py-2 text-sm text-muted-foreground">
+                <Icon name="Info" size={14} />
+                Остаток = поступления − расход по списаниям
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => openArrivalModal()} className="flex items-center gap-2 rounded-xl border border-accent/40 bg-accent/10 px-4 py-2.5 text-sm font-medium text-accent hover:bg-accent/20 transition-colors">
+                  <Icon name="PackagePlus" size={16} />Добавить поступление
+                </button>
+                <button onClick={openAddMat} className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-80">
+                  <Icon name="Plus" size={16} />Новый материал
+                </button>
+              </div>
             </div>
+
+            {/* Карточки материалов */}
             <div className="space-y-3">
               {matList.map((m, i) => {
-                const stockPct = m.maxStock > 0 ? Math.round((m.stock / m.maxStock) * 100) : 0
-                const usedPct  = (m.stock + m.usedQty) > 0 ? Math.round((m.usedQty / (m.stock + m.usedQty)) * 100) : 0
-                const isLow    = stockPct < 35
+                const autoStock  = calcStock(m)
+                const autoUsed   = calcUsed(m)
+                const totalIn    = calcTotalIn(m)
+                const stockPct   = totalIn > 0 ? Math.round((autoStock / totalIn) * 100) : 0
+                const usedPct    = totalIn > 0 ? Math.round((autoUsed  / totalIn) * 100) : 0
+                const isLow      = stockPct < 35
+                const matArrivals = arrivals.filter(a => a.materialId === m.id)
+                const showHistory = selectedMatId === m.id
+
                 return (
-                  <div key={m.id} className="animate-fade-up rounded-2xl border border-border bg-card p-5" style={{ animationDelay: `${i * 40}ms` }}>
-                    <div className="flex flex-wrap items-start justify-between gap-4">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-medium text-foreground">{m.name}</span>
-                          <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${m.type==='Ткань'?'bg-accent/15 text-accent':'bg-secondary text-secondary-foreground'}`}>{m.type}</span>
-                          {isLow && <span className="flex items-center gap-1 rounded-full bg-destructive/10 px-2.5 py-0.5 text-xs font-medium text-destructive"><Icon name="AlertTriangle" size={11} />Мало</span>}
+                  <div key={m.id} className="animate-fade-up overflow-hidden rounded-2xl border border-border bg-card" style={{ animationDelay: `${i * 40}ms` }}>
+                    <div className="p-5">
+                      <div className="flex flex-wrap items-start justify-between gap-4">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-medium text-foreground">{m.name}</span>
+                            <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${m.type==='Ткань'?'bg-accent/15 text-accent':'bg-secondary text-secondary-foreground'}`}>{m.type}</span>
+                            {isLow && <span className="flex items-center gap-1 rounded-full bg-destructive/10 px-2.5 py-0.5 text-xs font-medium text-destructive"><Icon name="AlertTriangle" size={11} />Мало</span>}
+                          </div>
+                          <div className="mt-1 text-sm text-muted-foreground">{fmt(m.pricePerUnit)}/{m.unit} · расход {m.perItem} {m.unit}/изд.</div>
                         </div>
-                        <div className="mt-1 text-sm text-muted-foreground">{fmt(m.pricePerUnit)}/{m.unit} · расход {m.perItem} {m.unit}/изд.</div>
-                      </div>
-                      <div className="flex shrink-0 items-start gap-2">
-                        <div className="rounded-xl border border-border bg-secondary/40 px-4 py-2.5 text-sm">
-                          <div className="font-medium text-foreground">{m.supplier.name}</div>
-                          <div className="mt-0.5 flex flex-col gap-0.5 text-xs text-muted-foreground">
-                            {m.supplier.site    && <span className="flex items-center gap-1"><Icon name="Globe"  size={11} />{m.supplier.site}</span>}
-                            {m.supplier.contact && <span className="flex items-center gap-1"><Icon name="Phone"  size={11} />{m.supplier.contact}</span>}
-                            <span className="flex items-center gap-1"><Icon name="Truck" size={11} />доставка {m.supplier.deliveryDays} дн.</span>
+                        <div className="flex shrink-0 items-start gap-2">
+                          <div className="rounded-xl border border-border bg-secondary/40 px-4 py-2.5 text-sm">
+                            <div className="font-medium text-foreground">{m.supplier.name}</div>
+                            <div className="mt-0.5 flex flex-col gap-0.5 text-xs text-muted-foreground">
+                              {m.supplier.site    && <span className="flex items-center gap-1"><Icon name="Globe"  size={11} />{m.supplier.site}</span>}
+                              {m.supplier.contact && <span className="flex items-center gap-1"><Icon name="Phone"  size={11} />{m.supplier.contact}</span>}
+                              <span className="flex items-center gap-1"><Icon name="Truck" size={11} />доставка {m.supplier.deliveryDays} дн.</span>
+                            </div>
+                          </div>
+                          <div className="flex flex-col gap-1">
+                            {/* Кнопка поступления */}
+                            <button onClick={() => openArrivalModal(m.id)}
+                              title="Добавить поступление"
+                              className="flex h-8 w-8 items-center justify-center rounded-lg border border-accent/40 bg-accent/10 text-accent hover:bg-accent/20 transition-colors">
+                              <Icon name="PackagePlus" size={14} />
+                            </button>
+                            <button onClick={() => openEditMat(m)} className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-background text-muted-foreground hover:text-foreground transition-colors"><Icon name="Pencil" size={14} /></button>
+                            <button onClick={() => deleteMat(m.id)} className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-background text-muted-foreground hover:text-destructive transition-colors"><Icon name="Trash2" size={14} /></button>
                           </div>
                         </div>
-                        <div className="flex flex-col gap-1">
-                          <button onClick={() => openEditMat(m)} className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-background text-muted-foreground hover:text-foreground transition-colors"><Icon name="Pencil" size={14} /></button>
-                          <button onClick={() => deleteMat(m.id)} className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-background text-muted-foreground hover:text-destructive transition-colors"><Icon name="Trash2" size={14} /></button>
+                      </div>
+
+                      {/* Прогресс-бары (авторасчёт) */}
+                      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                        <div>
+                          <div className="mb-1.5 flex items-center justify-between text-xs">
+                            <span className="text-muted-foreground">Поступило всего</span>
+                            <span className="font-medium tabular-nums text-foreground">{totalIn} {m.unit}</span>
+                          </div>
+                          <div className="h-2 overflow-hidden rounded-full bg-secondary">
+                            <div className="h-full rounded-full bg-accent/50 transition-all" style={{ width: '100%' }} />
+                          </div>
+                        </div>
+                        <div>
+                          <div className="mb-1.5 flex items-center justify-between text-xs">
+                            <span className="text-muted-foreground">Израсходовано</span>
+                            <span className="font-medium tabular-nums text-foreground">{autoUsed.toFixed(1)} {m.unit}</span>
+                          </div>
+                          <div className="h-2 overflow-hidden rounded-full bg-secondary">
+                            <div className="h-full rounded-full bg-accent/70 transition-all" style={{ width: `${usedPct}%` }} />
+                          </div>
+                          <div className="mt-1 text-right text-xs text-muted-foreground">{usedPct}%</div>
+                        </div>
+                        <div>
+                          <div className="mb-1.5 flex items-center justify-between text-xs">
+                            <span className="text-muted-foreground">Остаток (авто)</span>
+                            <span className={`font-medium tabular-nums ${isLow?'text-destructive':'text-success'}`}>{autoStock.toFixed(1)} {m.unit}</span>
+                          </div>
+                          <div className="h-2 overflow-hidden rounded-full bg-secondary">
+                            <div className={`h-full rounded-full transition-all ${isLow?'bg-destructive':'bg-success'}`} style={{ width: `${stockPct}%` }} />
+                          </div>
+                          <div className="mt-1 text-right text-xs text-muted-foreground">{stockPct}%</div>
                         </div>
                       </div>
+
+                      {/* Кнопка истории поступлений */}
+                      {matArrivals.length > 0 && (
+                        <button
+                          onClick={() => setSelectedMatId(showHistory ? null : m.id)}
+                          className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors">
+                          <Icon name={showHistory ? 'ChevronUp' : 'ChevronDown'} size={13} />
+                          История поступлений ({matArrivals.length})
+                        </button>
+                      )}
                     </div>
-                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                      <div>
-                        <div className="mb-1.5 flex items-center justify-between text-xs">
-                          <span className="text-muted-foreground">Остаток на складе</span>
-                          <span className={`font-medium tabular-nums ${isLow?'text-destructive':'text-foreground'}`}>{m.stock} / {m.maxStock} {m.unit}</span>
-                        </div>
-                        <div className="h-2 overflow-hidden rounded-full bg-secondary">
-                          <div className={`h-full rounded-full transition-all ${isLow?'bg-destructive':'bg-success'}`} style={{ width: `${stockPct}%` }} />
-                        </div>
-                        <div className="mt-1 text-right text-xs text-muted-foreground">{stockPct}%</div>
+
+                    {/* История поступлений */}
+                    {showHistory && (
+                      <div className="border-t border-border">
+                        <table className="w-full text-sm">
+                          <thead><tr className="bg-secondary/30 text-xs uppercase tracking-wider text-muted-foreground">
+                            <th className="px-5 py-2 text-left font-medium">Дата</th>
+                            <th className="px-5 py-2 text-right font-medium">Кол-во</th>
+                            <th className="px-5 py-2 text-right font-medium">Цена</th>
+                            <th className="px-5 py-2 text-left font-medium">Примечание</th>
+                            <th className="w-8" />
+                          </tr></thead>
+                          <tbody>
+                            {matArrivals.map(a => (
+                              <tr key={a.id} className="border-t border-border/50 hover:bg-secondary/20">
+                                <td className="px-5 py-2 tabular-nums text-muted-foreground">
+                                  {new Date(a.date).toLocaleDateString('ru-RU', { day:'2-digit', month:'short', year:'numeric' })}
+                                </td>
+                                <td className="px-5 py-2 text-right font-medium tabular-nums text-success">+{a.qty} {m.unit}</td>
+                                <td className="px-5 py-2 text-right tabular-nums text-muted-foreground">{fmt(a.pricePerUnit)}/{m.unit}</td>
+                                <td className="px-5 py-2 text-muted-foreground">{a.note || '—'}</td>
+                                <td className="px-2 py-2 text-center">
+                                  <button onClick={() => deleteArrival(a.id)} className="text-muted-foreground hover:text-destructive transition-colors">
+                                    <Icon name="X" size={13} />
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
                       </div>
-                      <div>
-                        <div className="mb-1.5 flex items-center justify-between text-xs">
-                          <span className="text-muted-foreground">Израсходовано</span>
-                          <span className="font-medium tabular-nums text-foreground">{m.usedQty} {m.unit}</span>
-                        </div>
-                        <div className="h-2 overflow-hidden rounded-full bg-secondary">
-                          <div className="h-full rounded-full bg-accent/70 transition-all" style={{ width: `${usedPct}%` }} />
-                        </div>
-                        <div className="mt-1 text-right text-xs text-muted-foreground">{usedPct}% от закупки</div>
-                      </div>
-                    </div>
+                    )}
                   </div>
                 )
               })}
@@ -1219,6 +1342,46 @@ const Index = () => {
       <footer className="border-t border-border/70 py-8 text-center text-sm text-muted-foreground">
         Арапайма · система учёта производства · {new Date().getFullYear()}
       </footer>
+
+      {/* Модалка: поступление товара */}
+      {arrivalModal && (
+        <Modal title="Добавить поступление" onClose={() => setArrivalModal(false)} onSave={saveArrival}>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="sm:col-span-2">
+              <label className="block">
+                <span className="mb-1 block text-xs text-muted-foreground">Материал</span>
+                <select
+                  value={arrivalForm.materialId}
+                  onChange={e => {
+                    const mat = matList.find(m => m.id === e.target.value)
+                    setArrivalForm(p => ({ ...p, materialId: e.target.value, pricePerUnit: mat?.pricePerUnit || 0 }))
+                  }}
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
+                >
+                  <option value="">— выберите материал —</option>
+                  {matList.map(m => (
+                    <option key={m.id} value={m.id}>{m.name} ({m.type})</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <FInput label="Дата поступления" type="date" value={arrivalForm.date} onChange={v => setArrivalForm(p => ({ ...p, date: v }))} />
+            <FInput label={`Количество (${matList.find(m => m.id === arrivalForm.materialId)?.unit || 'ед.'})`} type="number" value={arrivalForm.qty} onChange={v => setArrivalForm(p => ({ ...p, qty: Number(v) }))} />
+            <FInput label="Цена за единицу (₽)" type="number" value={arrivalForm.pricePerUnit} onChange={v => setArrivalForm(p => ({ ...p, pricePerUnit: Number(v) }))} />
+            {arrivalForm.qty > 0 && arrivalForm.pricePerUnit > 0 && (
+              <div className="flex items-center rounded-xl border border-accent/30 bg-accent/[0.06] px-4 py-3">
+                <div>
+                  <div className="text-xs text-muted-foreground">Сумма поступления</div>
+                  <div className="font-display text-2xl font-medium text-accent">{fmt(arrivalForm.qty * arrivalForm.pricePerUnit)}</div>
+                </div>
+              </div>
+            )}
+            <div className="sm:col-span-2">
+              <FInput label="Примечание (поставщик, партия...)" value={arrivalForm.note} onChange={v => setArrivalForm(p => ({ ...p, note: v }))} placeholder="Партия #42, ТекстильПро" />
+            </div>
+          </div>
+        </Modal>
+      )}
 
       {/* Модалка: редактирование материала */}
       {matModal.open && (
