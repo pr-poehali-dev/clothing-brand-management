@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react';
+import { useLocalStorage } from '@/hooks/useLocalStorage';
 import Icon from '@/components/ui/icon';
 import MetricCard from '@/components/atelier/MetricCard';
 import CostChart from '@/components/atelier/CostChart';
@@ -71,6 +72,52 @@ const NOTE_COLORS: Record<NoteColor, string> = {
   slate: 'bg-slate-50 border-slate-200 text-slate-900',
 }
 
+// ── Дефолтные данные (вне компонента — стабильные id) ────────────────────────
+const DEFAULT_ARRIVALS = [
+  { id: 'arr_m1', date: '2026-06-01', materialId: 'm1', qty: 50, pricePerUnit: 1450, note: 'Начальный остаток' },
+  { id: 'arr_m2', date: '2026-06-01', materialId: 'm2', qty: 80, pricePerUnit: 620,  note: 'Начальный остаток' },
+  { id: 'arr_m3', date: '2026-06-01', materialId: 'm3', qty: 40, pricePerUnit: 340,  note: 'Начальный остаток' },
+  { id: 'arr_f1', date: '2026-06-01', materialId: 'f1', qty: 60, pricePerUnit: 280,  note: 'Начальный остаток' },
+  { id: 'arr_f2', date: '2026-06-01', materialId: 'f2', qty: 200, pricePerUnit: 35,  note: 'Начальный остаток' },
+  { id: 'arr_f3', date: '2026-06-01', materialId: 'f3', qty: 300, pricePerUnit: 18,  note: 'Начальный остаток' },
+  { id: 'arr_f4', date: '2026-06-01', materialId: 'f4', qty: 80, pricePerUnit: 90,   note: 'Начальный остаток' },
+]
+const DEFAULT_TASKS = [
+  { id: 'task1', text: 'Заказать мембрану 3-слойную (запас заканчивается)', done: false },
+  { id: 'task2', text: 'Согласовать новый прайс с поставщиком YKK', done: false },
+  { id: 'task3', text: 'Отправить костюмы «Таймень» клиенту из Екатеринбурга', done: true },
+]
+const DEFAULT_NOTES = [
+  { id: 'note1', text: 'Попробовать новую ткань — дышащий таслан для летней линейки', color: 'olive' as const },
+  { id: 'note2', text: 'Идея: добавить карман для термоса внутри костюма', color: 'blue' as const },
+]
+const DEFAULT_REMINDERS = [
+  { id: 'rem1', text: 'Оплатить счёт от ТекстильПро', date: '2026-06-18', done: false },
+  { id: 'rem2', text: 'Съёмка новой коллекции для каталога', date: '2026-06-25', done: false },
+]
+const DEFAULT_SUIT_MODELS = [
+  { id: 's1', name: 'Таймень',  prices: { S: 14900, M: 14900, L: 15900, XL: 16900 } },
+  { id: 's2', name: 'Сёмга',    prices: { S: 16500, M: 16500, L: 17500, XL: 18500 } },
+  { id: 's3', name: 'Налим',    prices: { S: 12900, M: 12900, L: 13900, XL: 14900 } },
+]
+const DEFAULT_JACKET_FABRIC = [
+  { id: 'jf1', name: 'Мембрана 3-слойная', meters: 3.2, pricePerM: 1450 },
+  { id: 'jf2', name: 'Флис-подкладка',     meters: 2.5, pricePerM: 620 },
+]
+const DEFAULT_PANTS_FABRIC = [
+  { id: 'pf1', name: 'Мембрана 3-слойная',  meters: 2.0, pricePerM: 1450 },
+  { id: 'pf2', name: 'Сетка вентиляционная', meters: 0.8, pricePerM: 340 },
+]
+const DEFAULT_JACKET_HW = [
+  { id: 'jh1', name: 'Молния влагозащитная YKK', qty: 3, meters: 0, pricePerUnit: 280, unit: 'шт' as const },
+  { id: 'jh2', name: 'Фастекс усиленный',         qty: 6, meters: 0, pricePerUnit: 35,  unit: 'шт' as const },
+  { id: 'jh3', name: 'Светоотражающий кант',       qty: 0, meters: 2.1, pricePerUnit: 90, unit: 'м' as const },
+]
+const DEFAULT_PANTS_HW = [
+  { id: 'ph1', name: 'Молния влагозащитная YKK', qty: 1, meters: 0, pricePerUnit: 280, unit: 'шт' as const },
+  { id: 'ph2', name: 'Стопор-фиксатор',           qty: 4, meters: 0, pricePerUnit: 18,  unit: 'шт' as const },
+]
+
 type Tab = 'dashboard' | 'materials' | 'cost' | 'suits' | 'orders' | 'profit' | 'archive'
 const tabs: { id: Tab; label: string; icon: string }[] = [
   { id: 'dashboard', label: 'Обзор',         icon: 'LayoutDashboard' },
@@ -104,7 +151,7 @@ const Index = () => {
   const [size, setSize] = useState<Size>('M')
 
   // ── Материалы ──────────────────────────────────────────────────────────────
-  const [matList, setMatList] = useState<Material[]>(initialMaterials)
+  const [matList, setMatList] = useLocalStorage<Material[]>('arap_matList', initialMaterials)
   const [matModal, setMatModal] = useState<{ open: boolean; editing: Material | null }>({ open: false, editing: null })
   const [matForm, setMatForm] = useState<Omit<Material, 'id'>>(emptyMat())
 
@@ -128,15 +175,7 @@ const Index = () => {
     setMatForm(p => ({ ...p, supplier: { ...p.supplier, [key]: key === 'deliveryDays' ? Number(val) : val } }))
 
   // ── Поступления ─────────────────────────────────────────────────────────────
-  const [arrivals, setArrivals] = useState<Arrival[]>([
-    { id: uid(), date: '2026-06-01', materialId: 'm1', qty: 50, pricePerUnit: 1450, note: 'Начальный остаток' },
-    { id: uid(), date: '2026-06-01', materialId: 'm2', qty: 80, pricePerUnit: 620,  note: 'Начальный остаток' },
-    { id: uid(), date: '2026-06-01', materialId: 'm3', qty: 40, pricePerUnit: 340,  note: 'Начальный остаток' },
-    { id: uid(), date: '2026-06-01', materialId: 'f1', qty: 60, pricePerUnit: 280,  note: 'Начальный остаток' },
-    { id: uid(), date: '2026-06-01', materialId: 'f2', qty: 200, pricePerUnit: 35,  note: 'Начальный остаток' },
-    { id: uid(), date: '2026-06-01', materialId: 'f3', qty: 300, pricePerUnit: 18,  note: 'Начальный остаток' },
-    { id: uid(), date: '2026-06-01', materialId: 'f4', qty: 80, pricePerUnit: 90,   note: 'Начальный остаток' },
-  ])
+  const [arrivals, setArrivals] = useLocalStorage<Arrival[]>('arap_arrivals', DEFAULT_ARRIVALS)
   const [arrivalModal, setArrivalModal] = useState(false)
   const [arrivalForm, setArrivalForm] = useState<Omit<Arrival,'id'>>({ date: '', materialId: '', qty: 0, pricePerUnit: 0, note: '' })
   const [selectedMatId, setSelectedMatId] = useState<string | null>(null) // для фильтрации истории
@@ -191,23 +230,10 @@ const Index = () => {
   interface FabricLine  { id: string; name: string; meters: number; pricePerM: number }
   interface HardwareLine { id: string; name: string; qty: number; meters: number; pricePerUnit: number; unit: 'шт' | 'м' }
 
-  const [jacketFabricLines, setJacketFabricLines] = useState<FabricLine[]>([
-    { id: uid(), name: 'Мембрана 3-слойная', meters: 3.2, pricePerM: 1450 },
-    { id: uid(), name: 'Флис-подкладка',     meters: 2.5, pricePerM: 620 },
-  ])
-  const [pantsFabricLines, setPantsFabricLines] = useState<FabricLine[]>([
-    { id: uid(), name: 'Мембрана 3-слойная', meters: 2.0, pricePerM: 1450 },
-    { id: uid(), name: 'Сетка вентиляционная', meters: 0.8, pricePerM: 340 },
-  ])
-  const [jacketHardwareLines, setJacketHardwareLines] = useState<HardwareLine[]>([
-    { id: uid(), name: 'Молния влагозащитная YKK', qty: 3, meters: 0, pricePerUnit: 280, unit: 'шт' },
-    { id: uid(), name: 'Фастекс усиленный',         qty: 6, meters: 0, pricePerUnit: 35,  unit: 'шт' },
-    { id: uid(), name: 'Светоотражающий кант',       qty: 0, meters: 2.1, pricePerUnit: 90, unit: 'м' },
-  ])
-  const [pantsHardwareLines, setPantsHardwareLines] = useState<HardwareLine[]>([
-    { id: uid(), name: 'Молния влагозащитная YKK', qty: 1, meters: 0, pricePerUnit: 280, unit: 'шт' },
-    { id: uid(), name: 'Стопор-фиксатор',           qty: 4, meters: 0, pricePerUnit: 18,  unit: 'шт' },
-  ])
+  const [jacketFabricLines, setJacketFabricLines] = useLocalStorage<FabricLine[]>('arap_jacketFabric', DEFAULT_JACKET_FABRIC)
+  const [pantsFabricLines,  setPantsFabricLines]  = useLocalStorage<FabricLine[]>('arap_pantsFabric',  DEFAULT_PANTS_FABRIC)
+  const [jacketHardwareLines, setJacketHardwareLines] = useLocalStorage<HardwareLine[]>('arap_jacketHw', DEFAULT_JACKET_HW)
+  const [pantsHardwareLines,  setPantsHardwareLines]  = useLocalStorage<HardwareLine[]>('arap_pantsHw',  DEFAULT_PANTS_HW)
 
   const activeFabricLines    = garment === 'jacket' ? jacketFabricLines    : pantsFabricLines
   const setActiveFabricLines = garment === 'jacket' ? setJacketFabricLines : setPantsFabricLines
@@ -233,8 +259,8 @@ const Index = () => {
   const hwTotal      = (lines: HardwareLine[]) => lines.reduce((s, l) => s + (l.unit === 'м' ? l.meters : l.qty) * l.pricePerUnit, 0)
 
   // Новый динамический стейт статей для куртки и штанов
-  const [jacketLines, setJacketLines] = useState<CostLineTable>(defaultLines(4200, 1200, 1800))
-  const [pantsLines,  setPantsLines]  = useState<CostLineTable>(defaultLines(2300, 600, 1100))
+  const [jacketLines, setJacketLines] = useLocalStorage<CostLineTable>('arap_jacketLines', defaultLines(4200, 1200, 1800))
+  const [pantsLines,  setPantsLines]  = useLocalStorage<CostLineTable>('arap_pantsLines',  defaultLines(2300, 600, 1100))
 
   const activeLines    = garment === 'jacket' ? jacketLines : pantsLines
   const setActiveLines = garment === 'jacket' ? setJacketLines : setPantsLines
@@ -249,13 +275,13 @@ const Index = () => {
     setActiveLines(p => p.filter(l => l.id !== id))
 
   // Legacy-совместимость для раздела Костюмы (rowTotal)
-  const [jacketCosts, setJacketCosts] = useState<SizeCostTable>({
+  const [jacketCosts, setJacketCosts] = useLocalStorage<SizeCostTable>('arap_jacketCosts', {
     S:  defaultRow(3800, 1200, 1600),
     M:  defaultRow(4200, 1200, 1800),
     L:  defaultRow(4700, 1200, 1900),
     XL: defaultRow(5300, 1200, 2100),
   })
-  const [pantsCosts, setPantsCosts] = useState<SizeCostTable>({
+  const [pantsCosts, setPantsCosts] = useLocalStorage<SizeCostTable>('arap_pantsCosts', {
     S:  defaultRow(2100, 600, 1000),
     M:  defaultRow(2300, 600, 1100),
     L:  defaultRow(2600, 600, 1200),
@@ -269,11 +295,7 @@ const Index = () => {
 
   // ── Костюмы — модели с ценами продажи ──────────────────────────────────────
   interface SuitModel { id: string; name: string; prices: Record<Size, number> }
-  const [suitModels, setSuitModels] = useState<SuitModel[]>([
-    { id: 's1', name: 'Таймень',  prices: { S: 14900, M: 14900, L: 15900, XL: 16900 } },
-    { id: 's2', name: 'Сёмга',    prices: { S: 16500, M: 16500, L: 17500, XL: 18500 } },
-    { id: 's3', name: 'Налим',    prices: { S: 12900, M: 12900, L: 13900, XL: 14900 } },
-  ])
+  const [suitModels, setSuitModels] = useLocalStorage<SuitModel[]>('arap_suitModels', DEFAULT_SUIT_MODELS)
   const [suitSize, setSuitSize] = useState<Size>('M')
   const [editingSuit, setEditingSuit] = useState<string | null>(null)
 
@@ -293,7 +315,8 @@ const Index = () => {
 
   // ── Заказы (активные) ──────────────────────────────────────────────────────
   const today = new Date().toISOString().split('T')[0]
-  const [activeOrders, setActiveOrders] = useState<ActiveOrder[]>(
+  const [activeOrders, setActiveOrders] = useLocalStorage<ActiveOrder[]>(
+    'arap_activeOrders',
     initialOrders.map(o => ({ ...o, note: '', size: 'M' as Size, includesJacket: true, includesPants: true }))
   )
   const [orderModal, setOrderModal] = useState(false)
@@ -327,26 +350,12 @@ const Index = () => {
   const activeMargin   = activeRevenue > 0 ? (activeProfit / activeRevenue) * 100 : 0
 
   // ── Архив заказов ─────────────────────────────────────────────────────────
-  const [archiveOrders, setArchiveOrders] = useState<ArchiveOrder[]>([])
+  const [archiveOrders, setArchiveOrders] = useLocalStorage<ArchiveOrder[]>('arap_archiveOrders', [])
   const deleteArchiveOrder = (id: string) => setArchiveOrders(p => p.filter(o => o.id !== id))
 
-  // ── Архив списаний ────────────────────────────────────────────────────────
-  const [writeOffs, setWriteOffs] = useState<WriteOff[]>([
-    { id: uid(), date: '2026-06-10', materialName: 'Мембрана 3-слойная', qty: 9.6, unit: 'м', reason: 'Пошив 3 костюмов «Таймень»' },
-    { id: uid(), date: '2026-06-12', materialName: 'Молния влагозащитная YKK', qty: 9, unit: 'шт', reason: 'Пошив 3 костюмов «Сёмга»' },
-    { id: uid(), date: '2026-06-14', materialName: 'Флис-подкладка', qty: 7.5, unit: 'м', reason: 'Пошив 3 костюмов «Таймень»' },
-  ])
-  const [woModal, setWoModal] = useState(false)
-  const [woForm, setWoForm] = useState<Omit<WriteOff,'id'>>({ date: today, materialName: '', qty: 0, unit: 'м', reason: '' })
-  const saveWo = () => {
-    if (!woForm.materialName.trim()) return
-    setWriteOffs(p => [{ ...woForm, id: uid() }, ...p])
-    setWoModal(false)
-    setWoForm({ date: today, materialName: '', qty: 0, unit: 'м', reason: '' })
-  }
-  const deleteWo = (id: string) => setWriteOffs(p => p.filter(w => w.id !== id))
-
-  const [archiveTab, setArchiveTab] = useState<'orders' | 'writeoffs'>('orders')
+  // writeOffs сохраняем для совместимости (не показываем в UI)
+  const writeOffs: WriteOff[] = []
+  const deleteWo = (_id: string) => {}
 
   // ── Прибыльность по продуктам ─────────────────────────────────────────────
   const allProducts = [...new Set(activeOrders.map(o => o.product))]
@@ -361,30 +370,20 @@ const Index = () => {
   })
 
   // ── Виджеты дашборда ──────────────────────────────────────────────────────
-  const [tasks, setTasks] = useState<TaskItem[]>([
-    { id: uid(), text: 'Заказать мембрану 3-слойную (запас заканчивается)', done: false },
-    { id: uid(), text: 'Согласовать новый прайс с поставщиком YKK', done: false },
-    { id: uid(), text: 'Отправить костюмы «Таймень» клиенту из Екатеринбурга', done: true },
-  ])
+  const [tasks, setTasks] = useLocalStorage<TaskItem[]>('arap_tasks', DEFAULT_TASKS)
   const [taskInput, setTaskInput] = useState('')
   const taskRef = useRef<HTMLInputElement>(null)
   const addTask    = () => { if (!taskInput.trim()) return; setTasks(p => [...p, { id: uid(), text: taskInput.trim(), done: false }]); setTaskInput('') }
   const toggleTask = (id: string) => setTasks(p => p.map(t => t.id === id ? { ...t, done: !t.done } : t))
   const removeTask = (id: string) => setTasks(p => p.filter(t => t.id !== id))
 
-  const [notes, setNotes] = useState<NoteItem[]>([
-    { id: uid(), text: 'Попробовать новую ткань — дышащий таслан для летней линейки', color: 'olive' },
-    { id: uid(), text: 'Идея: добавить карман для термоса внутри костюма', color: 'blue' },
-  ])
+  const [notes, setNotes] = useLocalStorage<NoteItem[]>('arap_notes', DEFAULT_NOTES)
   const [noteInput, setNoteInput] = useState('')
   const [noteColor, setNoteColor] = useState<NoteColor>('blue')
   const addNote    = () => { if (!noteInput.trim()) return; setNotes(p => [...p, { id: uid(), text: noteInput.trim(), color: noteColor }]); setNoteInput('') }
   const removeNote = (id: string) => setNotes(p => p.filter(n => n.id !== id))
 
-  const [reminders, setReminders] = useState<ReminderItem[]>([
-    { id: uid(), text: 'Оплатить счёт от ТекстильПро', date: '2026-06-18', done: false },
-    { id: uid(), text: 'Съёмка новой коллекции для каталога', date: '2026-06-25', done: false },
-  ])
+  const [reminders, setReminders] = useLocalStorage<ReminderItem[]>('arap_reminders', DEFAULT_REMINDERS)
   const [remText, setRemText] = useState('')
   const [remDate, setRemDate] = useState('')
   const addReminder    = () => { if (!remText.trim() || !remDate) return; setReminders(p => [...p, { id: uid(), text: remText.trim(), date: remDate, done: false }]); setRemText(''); setRemDate('') }
@@ -1471,27 +1470,7 @@ const Index = () => {
         </Modal>
       )}
 
-      {/* Модалка: списание */}
-      {woModal && (
-        <Modal title="Добавить списание" onClose={() => setWoModal(false)} onSave={saveWo}>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="sm:col-span-2">
-              <label className="block"><span className="mb-1 block text-xs text-muted-foreground">Материал</span>
-                <select value={woForm.materialName} onChange={e => {
-                  const m = matList.find(m => m.name === e.target.value)
-                  setWoForm(p => ({ ...p, materialName: e.target.value, unit: m?.unit || 'м' }))
-                }} className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring">
-                  <option value="">— выберите —</option>
-                  {matList.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
-                </select>
-              </label>
-            </div>
-            <FInput label="Дата" type="date" value={woForm.date} onChange={v => setWoForm(p => ({ ...p, date: v }))} />
-            <FInput label={`Количество (${woForm.unit})`} type="number" value={woForm.qty} onChange={v => setWoForm(p => ({ ...p, qty: Number(v) }))} />
-            <div className="sm:col-span-2"><FInput label="Причина" value={woForm.reason} onChange={v => setWoForm(p => ({ ...p, reason: v }))} placeholder="Пошив 5 костюмов «Таймень»" /></div>
-          </div>
-        </Modal>
-      )}
+
     </div>
   )
 }
