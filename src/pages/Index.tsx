@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import Icon from '@/components/ui/icon';
 import MetricCard from '@/components/atelier/MetricCard';
 import CostChart from '@/components/atelier/CostChart';
@@ -17,7 +17,20 @@ import {
   fmt,
 } from '@/lib/atelier-data';
 
-const HERO = 'https://cdn.poehali.dev/projects/b64ce30a-748b-476e-b108-36b20c8e1977/files/d1e50a0e-1a10-477c-8ac1-d703fd06607f.jpg';
+// ── Типы для виджетов дашборда ──────────────────────────────────────────────
+interface TaskItem { id: string; text: string; done: boolean }
+interface NoteItem { id: string; text: string; color: NoteColor }
+interface ReminderItem { id: string; text: string; date: string; done: boolean }
+type NoteColor = 'blue' | 'olive' | 'sand' | 'slate'
+
+const NOTE_COLORS: Record<NoteColor, string> = {
+  blue:  'bg-sky-50 border-sky-200 text-sky-900',
+  olive: 'bg-green-50 border-green-200 text-green-900',
+  sand:  'bg-amber-50 border-amber-200 text-amber-900',
+  slate: 'bg-slate-50 border-slate-200 text-slate-900',
+}
+
+const uid = () => Math.random().toString(36).slice(2, 9)
 
 type Tab = 'dashboard' | 'materials' | 'cost' | 'orders' | 'profit';
 
@@ -39,6 +52,62 @@ const Index = () => {
   const sizeBreakdown = costBreakdown(size);
   const sizeUc = Math.round(unitCost(size));
   const bySize = costBySize();
+
+  // ── Задачи ──
+  const [tasks, setTasks] = useState<TaskItem[]>([
+    { id: uid(), text: 'Заказать мембрану 3-слойную (запас заканчивается)', done: false },
+    { id: uid(), text: 'Согласовать новый прайс с поставщиком YKK', done: false },
+    { id: uid(), text: 'Отправить костюмы «Таймень» клиенту из Екатеринбурга', done: true },
+  ])
+  const [taskInput, setTaskInput] = useState('')
+  const taskRef = useRef<HTMLInputElement>(null)
+
+  const addTask = () => {
+    if (!taskInput.trim()) return
+    setTasks(p => [...p, { id: uid(), text: taskInput.trim(), done: false }])
+    setTaskInput('')
+  }
+  const toggleTask = (id: string) =>
+    setTasks(p => p.map(t => t.id === id ? { ...t, done: !t.done } : t))
+  const removeTask = (id: string) =>
+    setTasks(p => p.filter(t => t.id !== id))
+
+  // ── Заметки ──
+  const [notes, setNotes] = useState<NoteItem[]>([
+    { id: uid(), text: 'Попробовать новую ткань — дышащий таслан для летней линейки', color: 'olive' },
+    { id: uid(), text: 'Идея: добавить карман для термоса внутри костюма', color: 'blue' },
+  ])
+  const [noteInput, setNoteInput] = useState('')
+  const [noteColor, setNoteColor] = useState<NoteColor>('blue')
+
+  const addNote = () => {
+    if (!noteInput.trim()) return
+    setNotes(p => [...p, { id: uid(), text: noteInput.trim(), color: noteColor }])
+    setNoteInput('')
+  }
+  const removeNote = (id: string) =>
+    setNotes(p => p.filter(n => n.id !== id))
+
+  // ── Напоминания ──
+  const [reminders, setReminders] = useState<ReminderItem[]>([
+    { id: uid(), text: 'Оплатить счёт от ТекстильПро', date: '2026-06-18', done: false },
+    { id: uid(), text: 'Съёмка новой коллекции для каталога', date: '2026-06-25', done: false },
+  ])
+  const [remText, setRemText] = useState('')
+  const [remDate, setRemDate] = useState('')
+
+  const addReminder = () => {
+    if (!remText.trim() || !remDate) return
+    setReminders(p => [...p, { id: uid(), text: remText.trim(), date: remDate, done: false }])
+    setRemText(''); setRemDate('')
+  }
+  const toggleReminder = (id: string) =>
+    setReminders(p => p.map(r => r.id === id ? { ...r, done: !r.done } : r))
+  const removeReminder = (id: string) =>
+    setReminders(p => p.filter(r => r.id !== id))
+
+  const today = new Date().toISOString().split('T')[0]
+  const overdue = reminders.filter(r => !r.done && r.date < today).length
 
   return (
     <div className="min-h-screen bg-background bg-grain">
@@ -63,29 +132,8 @@ const Index = () => {
         </div>
       </header>
 
-      {/* Hero */}
-      <section className="mx-auto max-w-6xl px-6 pt-10">
-        <div className="grid items-center gap-8 md:grid-cols-[1.3fr_1fr]">
-          <div className="animate-fade-up">
-            <div className="mb-3 text-xs uppercase tracking-[0.22em] text-accent">
-              Костюмы для рыбаков
-            </div>
-            <h1 className="font-display text-5xl font-medium leading-[1.05] text-foreground md:text-6xl">
-              Каждая нить —<br />под контролем
-            </h1>
-            <p className="mt-4 max-w-md text-muted-foreground">
-              Материалы, себестоимость, продажи и прибыль вашего бренда — в одном спокойном
-              пространстве.
-            </p>
-          </div>
-          <div className="animate-fade-up overflow-hidden rounded-2xl border border-border" style={{ animationDelay: '120ms' }}>
-            <img src={HERO} alt="Материалы" className="aspect-[4/3] w-full object-cover" />
-          </div>
-        </div>
-      </section>
-
       {/* Tabs */}
-      <nav className="mx-auto mt-10 max-w-6xl px-6">
+      <nav className="mx-auto mt-6 max-w-6xl px-6">
         <div className="flex flex-wrap gap-1 rounded-2xl border border-border bg-card p-1.5">
           {tabs.map((tb) => (
             <button
@@ -107,6 +155,7 @@ const Index = () => {
       <main className="mx-auto max-w-6xl px-6 py-8">
         {tab === 'dashboard' && (
           <div className="space-y-6">
+            {/* Метрики */}
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <MetricCard label="Выручка" value={fmt(t.revenue)} icon="Banknote" accent hint={`${t.unitsSold} изделий продано`} delay={0} />
               <MetricCard label="Чистая прибыль" value={fmt(t.profit)} icon="TrendingUp" hint={`Маржа ${t.margin.toFixed(1)}%`} delay={60} />
@@ -114,16 +163,189 @@ const Index = () => {
               <MetricCard label="Себестоимость" value={fmt(uc)} icon="Tag" hint="за одно изделие" delay={180} />
             </div>
 
-            <div className="grid gap-4 lg:grid-cols-2">
-              <div className="animate-fade-up rounded-2xl border border-border bg-card p-6" style={{ animationDelay: '220ms' }}>
-                <h3 className="font-display text-2xl font-medium">Прибыль и расходы</h3>
-                <p className="mb-6 text-sm text-muted-foreground">Соотношение в выручке</p>
-                <ProfitRatio profit={t.profit} cost={t.cost} revenue={t.revenue} />
+            {/* Виджеты */}
+            <div className="grid gap-4 lg:grid-cols-3">
+
+              {/* ── Задачи ── */}
+              <div className="animate-fade-up rounded-2xl border border-border bg-card p-5" style={{ animationDelay: '200ms' }}>
+                <div className="mb-4 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Icon name="CheckSquare" size={16} className="text-accent" />
+                    <span className="font-medium">Задачи</span>
+                  </div>
+                  <span className="rounded-full bg-secondary px-2 py-0.5 text-xs text-muted-foreground">
+                    {tasks.filter(t => !t.done).length} осталось
+                  </span>
+                </div>
+
+                <div className="mb-3 space-y-1.5">
+                  {tasks.map(task => (
+                    <div key={task.id} className="group flex items-start gap-2.5 rounded-lg px-2 py-1.5 hover:bg-secondary/50">
+                      <button
+                        onClick={() => toggleTask(task.id)}
+                        className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-all ${
+                          task.done
+                            ? 'border-accent bg-accent text-accent-foreground'
+                            : 'border-border bg-background'
+                        }`}
+                      >
+                        {task.done && <Icon name="Check" size={10} />}
+                      </button>
+                      <span className={`flex-1 text-sm leading-snug ${task.done ? 'text-muted-foreground line-through' : 'text-foreground'}`}>
+                        {task.text}
+                      </span>
+                      <button
+                        onClick={() => removeTask(task.id)}
+                        className="hidden shrink-0 text-muted-foreground hover:text-destructive group-hover:block"
+                      >
+                        <Icon name="X" size={13} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex gap-2">
+                  <input
+                    ref={taskRef}
+                    value={taskInput}
+                    onChange={e => setTaskInput(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && addTask()}
+                    placeholder="Новая задача..."
+                    className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring"
+                  />
+                  <button
+                    onClick={addTask}
+                    className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-opacity hover:opacity-80"
+                  >
+                    <Icon name="Plus" size={16} />
+                  </button>
+                </div>
               </div>
-              <div className="animate-fade-up rounded-2xl border border-border bg-card p-6" style={{ animationDelay: '280ms' }}>
-                <h3 className="font-display text-2xl font-medium">Структура себестоимости</h3>
-                <p className="mb-6 text-sm text-muted-foreground">На одно изделие — {fmt(uc)}</p>
-                <CostChart items={breakdown} total={uc} />
+
+              {/* ── Заметки ── */}
+              <div className="animate-fade-up rounded-2xl border border-border bg-card p-5" style={{ animationDelay: '260ms' }}>
+                <div className="mb-4 flex items-center gap-2">
+                  <Icon name="StickyNote" size={16} className="text-accent" />
+                  <span className="font-medium">Заметки</span>
+                </div>
+
+                <div className="mb-3 space-y-2">
+                  {notes.map(note => (
+                    <div key={note.id} className={`group relative rounded-xl border px-3 py-2.5 text-sm leading-snug ${NOTE_COLORS[note.color]}`}>
+                      {note.text}
+                      <button
+                        onClick={() => removeNote(note.id)}
+                        className="absolute right-2 top-2 hidden text-current opacity-40 hover:opacity-80 group-hover:block"
+                      >
+                        <Icon name="X" size={13} />
+                      </button>
+                    </div>
+                  ))}
+                  {notes.length === 0 && (
+                    <div className="py-4 text-center text-sm text-muted-foreground">Нет заметок</div>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <textarea
+                    value={noteInput}
+                    onChange={e => setNoteInput(e.target.value)}
+                    placeholder="Новая заметка..."
+                    rows={2}
+                    className="w-full resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring"
+                  />
+                  <div className="flex items-center justify-between">
+                    <div className="flex gap-1.5">
+                      {(Object.keys(NOTE_COLORS) as NoteColor[]).map(c => (
+                        <button
+                          key={c}
+                          onClick={() => setNoteColor(c)}
+                          className={`h-5 w-5 rounded-full border-2 transition-all ${
+                            c === 'blue' ? 'bg-sky-300' :
+                            c === 'olive' ? 'bg-green-300' :
+                            c === 'sand' ? 'bg-amber-300' : 'bg-slate-300'
+                          } ${noteColor === c ? 'border-foreground scale-110' : 'border-transparent'}`}
+                        />
+                      ))}
+                    </div>
+                    <button
+                      onClick={addNote}
+                      className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-80"
+                    >
+                      <Icon name="Plus" size={12} /> Добавить
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* ── Напоминания ── */}
+              <div className="animate-fade-up rounded-2xl border border-border bg-card p-5" style={{ animationDelay: '320ms' }}>
+                <div className="mb-4 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Icon name="Bell" size={16} className="text-accent" />
+                    <span className="font-medium">Напоминания</span>
+                  </div>
+                  {overdue > 0 && (
+                    <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">
+                      {overdue} просрочено
+                    </span>
+                  )}
+                </div>
+
+                <div className="mb-3 space-y-1.5">
+                  {reminders.map(r => {
+                    const isOverdue = !r.done && r.date < today
+                    return (
+                      <div key={r.id} className="group flex items-start gap-2.5 rounded-lg px-2 py-1.5 hover:bg-secondary/50">
+                        <button
+                          onClick={() => toggleReminder(r.id)}
+                          className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-all ${
+                            r.done ? 'border-accent bg-accent text-accent-foreground' : 'border-border bg-background'
+                          }`}
+                        >
+                          {r.done && <Icon name="Check" size={10} />}
+                        </button>
+                        <div className="flex-1 min-w-0">
+                          <div className={`text-sm leading-snug ${r.done ? 'text-muted-foreground line-through' : 'text-foreground'}`}>
+                            {r.text}
+                          </div>
+                          <div className={`mt-0.5 text-xs ${isOverdue ? 'text-destructive font-medium' : 'text-muted-foreground'}`}>
+                            {isOverdue ? '⚠ ' : ''}{new Date(r.date).toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' })}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => removeReminder(r.id)}
+                          className="hidden shrink-0 text-muted-foreground hover:text-destructive group-hover:block"
+                        >
+                          <Icon name="X" size={13} />
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
+
+                <div className="space-y-2">
+                  <input
+                    value={remText}
+                    onChange={e => setRemText(e.target.value)}
+                    placeholder="Текст напоминания..."
+                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring"
+                  />
+                  <div className="flex gap-2">
+                    <input
+                      type="date"
+                      value={remDate}
+                      onChange={e => setRemDate(e.target.value)}
+                      className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                    />
+                    <button
+                      onClick={addReminder}
+                      className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground hover:opacity-80"
+                    >
+                      <Icon name="Plus" size={16} />
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
