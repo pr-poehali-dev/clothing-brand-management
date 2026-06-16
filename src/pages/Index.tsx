@@ -132,13 +132,43 @@ const Index = () => {
     setEditCost(false)
   }
 
-  // Производные расчёты себестоимости
-  const ohTotal     = oh.taxes + oh.marketing + oh.logistics
-  const uc          = Math.round(calcUnitCost(matList, 'M', labor, oh))
-  const breakdown   = calcBreakdown(matList, 'M', labor, oh)
-  const sizeUc      = Math.round(calcUnitCost(matList, size, labor, oh))
-  const sizeBreakdown = calcBreakdown(matList, size, labor, oh)
-  const bySize      = sizes.map(s => ({ size: s, material: Math.round(calcMaterialCost(matList, s)), cost: Math.round(calcUnitCost(matList, s, labor, oh)) }))
+  // ── Редактируемые коэффициенты размеров ─────────────────────────────────────
+  const [sizeFactors, setSizeFactors] = useState<Record<Size, number>>({ S: 0.9, M: 1.0, L: 1.1, XL: 1.22 })
+  const [editSizes, setEditSizes] = useState(false)
+  const [sizeDraft, setSizeDraft] = useState<Record<Size, number>>({ ...sizeFactors })
+
+  const openSizeEdit = () => { setSizeDraft({ ...sizeFactors }); setEditSizes(true) }
+  const saveSizeEdit = () => { setSizeFactors({ ...sizeDraft }); setEditSizes(false) }
+
+  // Производные расчёты себестоимости (используют sizeFactors вместо статичного sizeFactor)
+  function calcMatCostLocal(mats: Material[], s: Size) {
+    return mats.reduce((acc, m) => {
+      const f = m.type === 'Ткань' ? sizeFactors[s] : 1
+      return acc + m.pricePerUnit * m.perItem * f
+    }, 0)
+  }
+  function calcUnitLocal(mats: Material[], s: Size) {
+    return calcMatCostLocal(mats, s) + labor * sizeFactors[s] + oh.taxes + oh.marketing + oh.logistics
+  }
+  function calcBdLocal(mats: Material[], s: Size) {
+    const f = sizeFactors[s]
+    const fabric   = mats.filter(m => m.type === 'Ткань').reduce((acc, m) => acc + m.pricePerUnit * m.perItem * f, 0)
+    const hardware = mats.filter(m => m.type === 'Фурнитура').reduce((acc, m) => acc + m.pricePerUnit * m.perItem, 0)
+    return [
+      { label: 'Ткань',     value: Math.round(fabric) },
+      { label: 'Фурнитура', value: Math.round(hardware) },
+      { label: 'Пошив',     value: Math.round(labor * f) },
+      { label: 'Налоги',    value: oh.taxes },
+      { label: 'Реклама',   value: oh.marketing },
+      { label: 'Логистика', value: oh.logistics },
+    ]
+  }
+
+  const ohTotal       = oh.taxes + oh.marketing + oh.logistics
+  const uc            = Math.round(calcUnitLocal(matList, 'M'))
+  const sizeUc        = Math.round(calcUnitLocal(matList, size))
+  const sizeBreakdown = calcBdLocal(matList, size)
+  const bySize        = sizes.map(s => ({ size: s, material: Math.round(calcMatCostLocal(matList, s)), cost: Math.round(calcUnitLocal(matList, s)), factor: sizeFactors[s] }))
 
   // ── Заказы (активные) ──────────────────────────────────────────────────────
   const today = new Date().toISOString().split('T')[0]
@@ -477,13 +507,20 @@ const Index = () => {
 
             {/* Таблица по размерам */}
             <div className="mb-6 overflow-hidden rounded-2xl border border-border bg-card">
-              <div className="border-b border-border px-5 py-4">
-                <h3 className="font-display text-xl font-medium">Себестоимость по размерам</h3>
-                <p className="text-sm text-muted-foreground">Ткань и пошив масштабируются — нажмите строку для детализации</p>
+              <div className="flex items-center justify-between border-b border-border px-5 py-4">
+                <div>
+                  <h3 className="font-display text-xl font-medium">Себестоимость по размерам</h3>
+                  <p className="text-sm text-muted-foreground">Нажмите строку для детализации · коэффициент влияет на ткань и пошив</p>
+                </div>
+                <button onClick={openSizeEdit}
+                  className="flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
+                  <Icon name="Pencil" size={14} />Коэффициенты
+                </button>
               </div>
               <table className="w-full text-sm">
                 <thead><tr className="border-b border-border bg-secondary/50 text-left text-xs uppercase tracking-wider text-muted-foreground">
                   <th className="px-5 py-3 font-medium">Размер</th>
+                  <th className="px-5 py-3 text-right font-medium">Коэф.</th>
                   <th className="px-5 py-3 text-right font-medium">Материалы</th>
                   <th className="px-5 py-3 text-right font-medium">Накладные</th>
                   <th className="px-5 py-3 text-right font-medium">Итого</th>
@@ -491,7 +528,10 @@ const Index = () => {
                 <tbody>
                   {bySize.map(s => (
                     <tr key={s.size} onClick={() => setSize(s.size)} className={`cursor-pointer border-b border-border/60 last:border-0 transition-colors ${size===s.size?'bg-accent/10':'hover:bg-secondary/30'}`}>
-                      <td className="px-5 py-3.5"><span className="inline-flex h-7 w-9 items-center justify-center rounded-md bg-primary text-xs font-semibold text-primary-foreground">{s.size}</span></td>
+                      <td className="px-5 py-3.5"><span className={`inline-flex h-7 w-9 items-center justify-center rounded-md text-xs font-semibold ${size===s.size?'bg-accent text-accent-foreground':'bg-primary text-primary-foreground'}`}>{s.size}</span></td>
+                      <td className="px-5 py-3.5 text-right tabular-nums">
+                        <span className="rounded-lg bg-secondary px-2 py-1 text-xs font-medium tabular-nums">×{s.factor.toFixed(2)}</span>
+                      </td>
                       <td className="px-5 py-3.5 text-right tabular-nums text-muted-foreground">{fmt(s.material)}</td>
                       <td className="px-5 py-3.5 text-right tabular-nums text-muted-foreground">{fmt(ohTotal)}</td>
                       <td className="px-5 py-3.5 text-right font-semibold tabular-nums">{fmt(s.cost)}</td>
@@ -734,6 +774,55 @@ const Index = () => {
               <div className="mt-1 font-display text-2xl font-medium text-accent">
                 {fmt(costDraft.labor + costDraft.taxes + costDraft.marketing + costDraft.logistics)}
               </div>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Модалка: коэффициенты размеров */}
+      {editSizes && (
+        <Modal title="Коэффициенты размеров" onClose={() => setEditSizes(false)} onSave={saveSizeEdit}>
+          <div className="space-y-4">
+            <div className="rounded-xl bg-secondary/50 px-4 py-3 text-sm text-muted-foreground">
+              Коэффициент показывает, во сколько раз больше ткани и пошива уходит на размер относительно базового M = 1.0
+            </div>
+            <div className="overflow-hidden rounded-xl border border-border">
+              <table className="w-full text-sm">
+                <thead><tr className="border-b border-border bg-secondary/50 text-xs uppercase tracking-wider text-muted-foreground">
+                  <th className="px-4 py-3 text-left font-medium">Размер</th>
+                  <th className="px-4 py-3 text-left font-medium">Коэффициент</th>
+                  <th className="px-4 py-3 text-right font-medium text-muted-foreground/60">Пошив (₽)</th>
+                  <th className="px-4 py-3 text-right font-medium text-muted-foreground/60">Итого (₽)</th>
+                </tr></thead>
+                <tbody>
+                  {sizes.map(s => (
+                    <tr key={s} className="border-b border-border/60 last:border-0">
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex h-7 w-9 items-center justify-center rounded-md text-xs font-semibold ${s==='M'?'bg-accent text-accent-foreground':'bg-primary text-primary-foreground'}`}>{s}</span>
+                        {s === 'M' && <span className="ml-2 text-xs text-muted-foreground">базовый</span>}
+                      </td>
+                      <td className="px-4 py-3">
+                        <input
+                          type="number" step="0.01" min="0.5" max="3"
+                          value={sizeDraft[s]}
+                          onChange={e => setSizeDraft(p => ({ ...p, [s]: Number(e.target.value) }))}
+                          className="w-24 rounded-lg border border-border bg-background px-3 py-1.5 text-sm tabular-nums focus:outline-none focus:ring-1 focus:ring-ring"
+                        />
+                      </td>
+                      <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">{fmt(Math.round(labor * sizeDraft[s]))}</td>
+                      <td className="px-4 py-3 text-right font-medium tabular-nums">
+                        {fmt(Math.round(
+                          matList.reduce((acc, m) => acc + m.pricePerUnit * m.perItem * (m.type === 'Ткань' ? sizeDraft[s] : 1), 0)
+                          + labor * sizeDraft[s] + ohTotal
+                        ))}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="rounded-xl border border-border bg-secondary/30 px-4 py-3 text-xs text-muted-foreground">
+              Итоговая себестоимость пересчитается после сохранения
             </div>
           </div>
         </Modal>
