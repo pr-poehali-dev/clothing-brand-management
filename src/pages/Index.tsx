@@ -109,6 +109,16 @@ const Index = () => {
   const setS = (key: keyof Supplier, val: string) =>
     setMatForm(p => ({ ...p, supplier: { ...p.supplier, [key]: key === 'deliveryDays' ? Number(val) : val } }))
 
+  // ── Теги тканей для куртки и штанов ─────────────────────────────────────────
+  const fabricsFromMaterials = matList.filter(m => m.type === 'Ткань')
+  const [jacketFabrics, setJacketFabrics] = useState<string[]>(['m1', 'm2'])
+  const [pantsFabrics,  setPantsFabrics]  = useState<string[]>(['m1', 'm3'])
+
+  const activeFabrics    = garment === 'jacket' ? jacketFabrics : pantsFabrics
+  const setActiveFabrics = garment === 'jacket' ? setJacketFabrics : setPantsFabrics
+  const toggleFabric = (id: string) =>
+    setActiveFabrics(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id])
+
   // ── Себестоимость — прямые таблицы (куртка / штаны) ────────────────────────
   const [garment, setGarment] = useState<GarmentType>('jacket')
 
@@ -485,6 +495,67 @@ const Index = () => {
               <span className="text-sm text-muted-foreground">
                 Итого {garment==='jacket'?'куртка':'штаны'} · M = <span className="font-semibold text-foreground">{fmt(rowTotal(activeCosts['M']))}</span>
               </span>
+            </div>
+
+            {/* Теги тканей */}
+            <div className="rounded-2xl border border-border bg-card p-5">
+              <div className="mb-3 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Icon name="Layers" size={15} className="text-accent" />
+                  <span className="text-sm font-medium">Ткани для {garment==='jacket'?'куртки':'штанов'}</span>
+                  <span className="rounded-full bg-secondary px-2 py-0.5 text-xs text-muted-foreground">
+                    {activeFabrics.length} отмечено
+                  </span>
+                </div>
+                {fabricsFromMaterials.length === 0 && (
+                  <span className="text-xs text-muted-foreground">Добавьте ткани во вкладке «Материалы»</span>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {fabricsFromMaterials.map(m => {
+                  const on = activeFabrics.includes(m.id)
+                  return (
+                    <button
+                      key={m.id}
+                      onClick={() => toggleFabric(m.id)}
+                      className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition-all ${
+                        on
+                          ? 'border-accent bg-accent text-accent-foreground shadow-sm'
+                          : 'border-border bg-secondary/50 text-muted-foreground hover:border-accent/50 hover:text-foreground'
+                      }`}
+                    >
+                      <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border text-[10px] transition-all ${
+                        on ? 'border-accent-foreground/40 bg-accent-foreground/20' : 'border-border bg-background'
+                      }`}>
+                        {on && <Icon name="Check" size={9} />}
+                      </span>
+                      {m.name}
+                      <span className={`tabular-nums text-xs ${on ? 'opacity-70' : 'opacity-50'}`}>
+                        {fmt(m.pricePerUnit)}/{m.unit}
+                      </span>
+                    </button>
+                  )
+                })}
+                {fabricsFromMaterials.length === 0 && (
+                  <div className="rounded-xl border border-dashed border-border px-4 py-3 text-sm text-muted-foreground">
+                    Нет тканей в списке материалов
+                  </div>
+                )}
+              </div>
+              {activeFabrics.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-2 border-t border-border/60 pt-3">
+                  {activeFabrics.map(id => {
+                    const m = fabricsFromMaterials.find(x => x.id === id)
+                    if (!m) return null
+                    return (
+                      <span key={id} className="inline-flex items-center gap-1 rounded-lg bg-sky-50 border border-sky-200 px-2.5 py-1 text-xs text-sky-700">
+                        <Icon name="Layers" size={10} />
+                        {m.name} · {m.perItem} {m.unit}/изд. · <span className="font-medium">{fmt(m.pricePerUnit * m.perItem)}</span>
+                      </span>
+                    )
+                  })}
+                </div>
+              )}
             </div>
 
             {/* Таблица с прямым редактированием */}
