@@ -112,15 +112,50 @@ const Index = () => {
   // ── Себестоимость — прямые таблицы (куртка / штаны) ────────────────────────
   const [garment, setGarment] = useState<GarmentType>('jacket')
 
-  // ── Теги тканей для куртки и штанов ─────────────────────────────────────────
-  const fabricsFromMaterials = matList.filter(m => m.type === 'Ткань')
-  const [jacketFabrics, setJacketFabrics] = useState<string[]>(['m1', 'm2'])
-  const [pantsFabrics,  setPantsFabrics]  = useState<string[]>(['m1', 'm3'])
+  // ── Перечень тканей и фурнитуры для куртки / штанов ──────────────────────────
+  interface FabricLine  { id: string; name: string; meters: number; pricePerM: number }
+  interface HardwareLine { id: string; name: string; qty: number; meters: number; pricePerUnit: number; unit: 'шт' | 'м' }
 
-  const activeFabrics    = garment === 'jacket' ? jacketFabrics : pantsFabrics
-  const setActiveFabrics = garment === 'jacket' ? setJacketFabrics : setPantsFabrics
-  const toggleFabric = (id: string) =>
-    setActiveFabrics(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id])
+  const [jacketFabricLines, setJacketFabricLines] = useState<FabricLine[]>([
+    { id: uid(), name: 'Мембрана 3-слойная', meters: 3.2, pricePerM: 1450 },
+    { id: uid(), name: 'Флис-подкладка',     meters: 2.5, pricePerM: 620 },
+  ])
+  const [pantsFabricLines, setPantsFabricLines] = useState<FabricLine[]>([
+    { id: uid(), name: 'Мембрана 3-слойная', meters: 2.0, pricePerM: 1450 },
+    { id: uid(), name: 'Сетка вентиляционная', meters: 0.8, pricePerM: 340 },
+  ])
+  const [jacketHardwareLines, setJacketHardwareLines] = useState<HardwareLine[]>([
+    { id: uid(), name: 'Молния влагозащитная YKK', qty: 3, meters: 0, pricePerUnit: 280, unit: 'шт' },
+    { id: uid(), name: 'Фастекс усиленный',         qty: 6, meters: 0, pricePerUnit: 35,  unit: 'шт' },
+    { id: uid(), name: 'Светоотражающий кант',       qty: 0, meters: 2.1, pricePerUnit: 90, unit: 'м' },
+  ])
+  const [pantsHardwareLines, setPantsHardwareLines] = useState<HardwareLine[]>([
+    { id: uid(), name: 'Молния влагозащитная YKK', qty: 1, meters: 0, pricePerUnit: 280, unit: 'шт' },
+    { id: uid(), name: 'Стопор-фиксатор',           qty: 4, meters: 0, pricePerUnit: 18,  unit: 'шт' },
+  ])
+
+  const activeFabricLines    = garment === 'jacket' ? jacketFabricLines    : pantsFabricLines
+  const setActiveFabricLines = garment === 'jacket' ? setJacketFabricLines : setPantsFabricLines
+  const activeHwLines        = garment === 'jacket' ? jacketHardwareLines   : pantsHardwareLines
+  const setActiveHwLines     = garment === 'jacket' ? setJacketHardwareLines : setPantsHardwareLines
+
+  const updateFabricLine = (id: string, field: keyof FabricLine, val: string) =>
+    setActiveFabricLines(p => p.map(l => l.id === id ? { ...l, [field]: ['meters','pricePerM'].includes(field) ? Number(val)||0 : val } : l))
+  const addFabricLine = () =>
+    setActiveFabricLines(p => [...p, { id: uid(), name: '', meters: 0, pricePerM: 0 }])
+  const removeFabricLine = (id: string) =>
+    setActiveFabricLines(p => p.filter(l => l.id !== id))
+
+  const updateHwLine = (id: string, field: keyof HardwareLine, val: string) =>
+    setActiveHwLines(p => p.map(l => l.id === id ? { ...l, [field]: ['qty','meters','pricePerUnit'].includes(field) ? Number(val)||0 : val } : l))
+  const addHwLine = () =>
+    setActiveHwLines(p => [...p, { id: uid(), name: '', qty: 0, meters: 0, pricePerUnit: 0, unit: 'шт' }])
+  const removeHwLine = (id: string) =>
+    setActiveHwLines(p => p.filter(l => l.id !== id))
+
+  // Суммы по тканям и фурнитуре
+  const fabricTotal  = (lines: FabricLine[]) => lines.reduce((s, l) => s + l.meters * l.pricePerM, 0)
+  const hwTotal      = (lines: HardwareLine[]) => lines.reduce((s, l) => s + (l.unit === 'м' ? l.meters : l.qty) * l.pricePerUnit, 0)
 
   const [jacketCosts, setJacketCosts] = useState<SizeCostTable>({
     S:  defaultRow(3800, 1200, 1600),
@@ -497,65 +532,137 @@ const Index = () => {
               </span>
             </div>
 
-            {/* Теги тканей */}
-            <div className="rounded-2xl border border-border bg-card p-5">
-              <div className="mb-3 flex items-center justify-between">
+            {/* ── Ткани ── */}
+            <div className="overflow-hidden rounded-2xl border border-border bg-card">
+              <div className="flex items-center justify-between border-b border-border bg-sky-50/60 px-5 py-3">
                 <div className="flex items-center gap-2">
-                  <Icon name="Layers" size={15} className="text-accent" />
-                  <span className="text-sm font-medium">Ткани для {garment==='jacket'?'куртки':'штанов'}</span>
-                  <span className="rounded-full bg-secondary px-2 py-0.5 text-xs text-muted-foreground">
-                    {activeFabrics.length} отмечено
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-sky-100 px-2.5 py-1 text-xs font-medium text-sky-700">
+                    <Icon name="Layers" size={11} />Ткань
+                  </span>
+                  <span className="text-sm text-muted-foreground">
+                    {garment==='jacket'?'Куртка':'Штаны'} · итого{' '}
+                    <span className="font-semibold text-foreground">{fmt(Math.round(fabricTotal(activeFabricLines)))}</span>
                   </span>
                 </div>
-                {fabricsFromMaterials.length === 0 && (
-                  <span className="text-xs text-muted-foreground">Добавьте ткани во вкладке «Материалы»</span>
-                )}
+                <button onClick={addFabricLine}
+                  className="flex items-center gap-1.5 rounded-lg border border-sky-200 bg-white px-3 py-1.5 text-xs font-medium text-sky-700 hover:bg-sky-50 transition-colors">
+                  <Icon name="Plus" size={12} />Добавить
+                </button>
               </div>
-              <div className="flex flex-wrap gap-2">
-                {fabricsFromMaterials.map(m => {
-                  const on = activeFabrics.includes(m.id)
-                  return (
-                    <button
-                      key={m.id}
-                      onClick={() => toggleFabric(m.id)}
-                      className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition-all ${
-                        on
-                          ? 'border-accent bg-accent text-accent-foreground shadow-sm'
-                          : 'border-border bg-secondary/50 text-muted-foreground hover:border-accent/50 hover:text-foreground'
-                      }`}
-                    >
-                      <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border text-[10px] transition-all ${
-                        on ? 'border-accent-foreground/40 bg-accent-foreground/20' : 'border-border bg-background'
-                      }`}>
-                        {on && <Icon name="Check" size={9} />}
-                      </span>
-                      {m.name}
-                      <span className={`tabular-nums text-xs ${on ? 'opacity-70' : 'opacity-50'}`}>
-                        {fmt(m.pricePerUnit)}/{m.unit}
-                      </span>
-                    </button>
-                  )
-                })}
-                {fabricsFromMaterials.length === 0 && (
-                  <div className="rounded-xl border border-dashed border-border px-4 py-3 text-sm text-muted-foreground">
-                    Нет тканей в списке материалов
-                  </div>
-                )}
+              <table className="w-full text-sm">
+                <thead><tr className="border-b border-border bg-secondary/30 text-xs uppercase tracking-wider text-muted-foreground">
+                  <th className="px-4 py-2.5 text-left font-medium">Наименование</th>
+                  <th className="px-3 py-2.5 text-right font-medium w-28">Метраж, м</th>
+                  <th className="px-3 py-2.5 text-right font-medium w-32">Цена за м, ₽</th>
+                  <th className="px-3 py-2.5 text-right font-medium w-28">Сумма, ₽</th>
+                  <th className="w-8" />
+                </tr></thead>
+                <tbody>
+                  {activeFabricLines.map(l => (
+                    <tr key={l.id} className="border-b border-border/50 last:border-0 hover:bg-sky-50/30 transition-colors">
+                      <td className="px-4 py-2">
+                        <input value={l.name} onChange={e => updateFabricLine(l.id, 'name', e.target.value)}
+                          placeholder="Название ткани"
+                          className="w-full rounded-lg border border-transparent bg-transparent px-2 py-1.5 text-sm hover:border-border focus:border-accent focus:bg-background focus:outline-none focus:ring-1 focus:ring-ring" />
+                      </td>
+                      <td className="px-3 py-2">
+                        <input type="number" value={l.meters} onChange={e => updateFabricLine(l.id, 'meters', e.target.value)}
+                          className="w-full rounded-lg border border-transparent bg-secondary/50 px-2 py-1.5 text-right text-sm tabular-nums hover:border-border focus:border-accent focus:bg-background focus:outline-none focus:ring-1 focus:ring-ring" />
+                      </td>
+                      <td className="px-3 py-2">
+                        <input type="number" value={l.pricePerM} onChange={e => updateFabricLine(l.id, 'pricePerM', e.target.value)}
+                          className="w-full rounded-lg border border-transparent bg-secondary/50 px-2 py-1.5 text-right text-sm tabular-nums hover:border-border focus:border-accent focus:bg-background focus:outline-none focus:ring-1 focus:ring-ring" />
+                      </td>
+                      <td className="px-3 py-2 text-right font-medium tabular-nums text-sky-700">
+                        {fmt(Math.round(l.meters * l.pricePerM))}
+                      </td>
+                      <td className="px-2 py-2 text-center">
+                        <button onClick={() => removeFabricLine(l.id)} className="text-muted-foreground hover:text-destructive transition-colors">
+                          <Icon name="X" size={13} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  <tr className="bg-sky-50/50 font-semibold">
+                    <td className="px-4 py-2.5 text-xs uppercase tracking-wider text-muted-foreground" colSpan={3}>Итого ткань</td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-sky-700">{fmt(Math.round(fabricTotal(activeFabricLines)))}</td>
+                    <td />
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            {/* ── Фурнитура ── */}
+            <div className="overflow-hidden rounded-2xl border border-border bg-card">
+              <div className="flex items-center justify-between border-b border-border bg-violet-50/60 px-5 py-3">
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-violet-100 px-2.5 py-1 text-xs font-medium text-violet-700">
+                    <Icon name="Settings2" size={11} />Фурнитура
+                  </span>
+                  <span className="text-sm text-muted-foreground">
+                    {garment==='jacket'?'Куртка':'Штаны'} · итого{' '}
+                    <span className="font-semibold text-foreground">{fmt(Math.round(hwTotal(activeHwLines)))}</span>
+                  </span>
+                </div>
+                <button onClick={addHwLine}
+                  className="flex items-center gap-1.5 rounded-lg border border-violet-200 bg-white px-3 py-1.5 text-xs font-medium text-violet-700 hover:bg-violet-50 transition-colors">
+                  <Icon name="Plus" size={12} />Добавить
+                </button>
               </div>
-              {activeFabrics.length > 0 && (
-                <div className="mt-3 flex flex-wrap gap-2 border-t border-border/60 pt-3">
-                  {activeFabrics.map(id => {
-                    const m = fabricsFromMaterials.find(x => x.id === id)
-                    if (!m) return null
+              <table className="w-full text-sm">
+                <thead><tr className="border-b border-border bg-secondary/30 text-xs uppercase tracking-wider text-muted-foreground">
+                  <th className="px-4 py-2.5 text-left font-medium">Наименование</th>
+                  <th className="px-3 py-2.5 text-center font-medium w-24">Тип</th>
+                  <th className="px-3 py-2.5 text-right font-medium w-28">Кол-во / м</th>
+                  <th className="px-3 py-2.5 text-right font-medium w-32">Цена за ед., ₽</th>
+                  <th className="px-3 py-2.5 text-right font-medium w-28">Сумма, ₽</th>
+                  <th className="w-8" />
+                </tr></thead>
+                <tbody>
+                  {activeHwLines.map(l => {
+                    const amount = l.unit === 'м' ? l.meters : l.qty
                     return (
-                      <span key={id} className="inline-flex items-center gap-1 rounded-lg bg-sky-50 border border-sky-200 px-2.5 py-1 text-xs text-sky-700">
-                        <Icon name="Layers" size={10} />
-                        {m.name} · {m.perItem} {m.unit}/изд. · <span className="font-medium">{fmt(m.pricePerUnit * m.perItem)}</span>
-                      </span>
+                      <tr key={l.id} className="border-b border-border/50 last:border-0 hover:bg-violet-50/30 transition-colors">
+                        <td className="px-4 py-2">
+                          <input value={l.name} onChange={e => updateHwLine(l.id, 'name', e.target.value)}
+                            placeholder="Название позиции"
+                            className="w-full rounded-lg border border-transparent bg-transparent px-2 py-1.5 text-sm hover:border-border focus:border-accent focus:bg-background focus:outline-none focus:ring-1 focus:ring-ring" />
+                        </td>
+                        <td className="px-3 py-2 text-center">
+                          <select value={l.unit} onChange={e => updateHwLine(l.id, 'unit', e.target.value)}
+                            className="rounded-lg border border-border bg-background px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-ring">
+                            <option value="шт">шт</option>
+                            <option value="м">м</option>
+                          </select>
+                        </td>
+                        <td className="px-3 py-2">
+                          <input type="number"
+                            value={l.unit === 'м' ? l.meters : l.qty}
+                            onChange={e => updateHwLine(l.id, l.unit === 'м' ? 'meters' : 'qty', e.target.value)}
+                            className="w-full rounded-lg border border-transparent bg-secondary/50 px-2 py-1.5 text-right text-sm tabular-nums hover:border-border focus:border-accent focus:bg-background focus:outline-none focus:ring-1 focus:ring-ring" />
+                        </td>
+                        <td className="px-3 py-2">
+                          <input type="number" value={l.pricePerUnit} onChange={e => updateHwLine(l.id, 'pricePerUnit', e.target.value)}
+                            className="w-full rounded-lg border border-transparent bg-secondary/50 px-2 py-1.5 text-right text-sm tabular-nums hover:border-border focus:border-accent focus:bg-background focus:outline-none focus:ring-1 focus:ring-ring" />
+                        </td>
+                        <td className="px-3 py-2 text-right font-medium tabular-nums text-violet-700">
+                          {fmt(Math.round(amount * l.pricePerUnit))}
+                        </td>
+                        <td className="px-2 py-2 text-center">
+                          <button onClick={() => removeHwLine(l.id)} className="text-muted-foreground hover:text-destructive transition-colors">
+                            <Icon name="X" size={13} />
+                          </button>
+                        </td>
+                      </tr>
                     )
                   })}
-                </div>
-              )}
+                  <tr className="bg-violet-50/50 font-semibold">
+                    <td className="px-4 py-2.5 text-xs uppercase tracking-wider text-muted-foreground" colSpan={4}>Итого фурнитура</td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-violet-700">{fmt(Math.round(hwTotal(activeHwLines)))}</td>
+                    <td />
+                  </tr>
+                </tbody>
+              </table>
             </div>
 
             {/* Таблица с прямым редактированием */}
