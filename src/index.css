@@ -4,37 +4,37 @@
 
 @layer base {
   :root {
-    --background: 40 30% 98%;
-    --foreground: 30 8% 14%;
+    --background: 210 28% 97%;
+    --foreground: 215 20% 12%;
 
     --card: 0 0% 100%;
-    --card-foreground: 30 8% 14%;
+    --card-foreground: 215 20% 12%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 30 8% 14%;
+    --popover-foreground: 215 20% 12%;
 
-    --primary: 28 25% 22%;
-    --primary-foreground: 40 30% 98%;
+    --primary: 210 30% 20%;
+    --primary-foreground: 210 28% 97%;
 
-    --secondary: 36 22% 94%;
-    --secondary-foreground: 28 25% 22%;
+    --secondary: 210 22% 93%;
+    --secondary-foreground: 210 30% 20%;
 
-    --muted: 36 20% 95%;
-    --muted-foreground: 30 6% 45%;
+    --muted: 210 20% 94%;
+    --muted-foreground: 210 10% 46%;
 
-    --accent: 24 60% 52%;
-    --accent-foreground: 40 30% 98%;
+    --accent: 196 52% 38%;
+    --accent-foreground: 0 0% 100%;
 
     --destructive: 4 70% 52%;
-    --destructive-foreground: 40 30% 98%;
+    --destructive-foreground: 0 0% 100%;
 
-    --border: 34 18% 89%;
-    --input: 34 18% 89%;
-    --ring: 24 60% 52%;
+    --border: 210 18% 88%;
+    --input: 210 18% 88%;
+    --ring: 196 52% 38%;
 
     --radius: 0.75rem;
 
-    --success: 152 40% 40%;
+    --success: 88 32% 36%;
 
     --sidebar-background: 0 0% 98%;
 
@@ -99,12 +99,12 @@
 
   body {
     @apply bg-background text-foreground;
-    font-family: "Golos Text", system-ui, sans-serif;
+    font-family: "IBM Plex Sans", system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
   }
 
   .font-display {
-    font-family: "Cormorant", Georgia, serif;
+    font-family: "IBM Plex Serif", Georgia, serif;
   }
 }
 
@@ -114,7 +114,7 @@
   }
   .bg-grain {
     background-image: radial-gradient(
-      hsl(28 20% 88% / 0.5) 0.5px,
+      hsl(210 18% 85% / 0.5) 0.5px,
       transparent 0.5px
     );
     background-size: 14px 14px;

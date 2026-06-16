@@ -47,10 +47,10 @@ const Index = () => {
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           <div className="flex items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <Icon name="Anchor" size={18} />
+              <Icon name="Fish" size={18} />
             </div>
             <div className="leading-tight">
-              <div className="font-display text-xl font-semibold">Ателье</div>
+              <div className="font-display text-xl font-semibold">Арапайма</div>
               <div className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
                 Учёт производства
               </div>
@@ -399,7 +399,7 @@ const Index = () => {
       </main>
 
       <footer className="border-t border-border/70 py-8 text-center text-sm text-muted-foreground">
-        Ателье · система учёта производства · {new Date().getFullYear()}
+        Арапайма · система учёта производства · {new Date().getFullYear()}
       </footer>
     </div>
   );

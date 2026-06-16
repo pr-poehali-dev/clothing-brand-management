@@ -20,8 +20,8 @@ export default {
 		},
 		extend: {
 			fontFamily: {
-				sans: ['Golos Text', 'system-ui', 'sans-serif'],
-				display: ['Cormorant', 'Georgia', 'serif']
+				sans: ['IBM Plex Sans', 'system-ui', 'sans-serif'],
+				display: ['IBM Plex Serif', 'Georgia', 'serif']
 			},
 			colors: {
 				success: 'hsl(var(--success))',
