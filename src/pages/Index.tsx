@@ -53,11 +53,12 @@ const NOTE_COLORS: Record<NoteColor, string> = {
   slate: 'bg-slate-50 border-slate-200 text-slate-900',
 }
 
-type Tab = 'dashboard' | 'materials' | 'cost' | 'orders' | 'profit' | 'archive'
+type Tab = 'dashboard' | 'materials' | 'cost' | 'suits' | 'orders' | 'profit' | 'archive'
 const tabs: { id: Tab; label: string; icon: string }[] = [
   { id: 'dashboard', label: 'Обзор',         icon: 'LayoutDashboard' },
   { id: 'materials', label: 'Материалы',     icon: 'Package' },
   { id: 'cost',      label: 'Себестоимость', icon: 'Calculator' },
+  { id: 'suits',     label: 'Костюмы',       icon: 'Layers' },
   { id: 'orders',    label: 'Заказы',        icon: 'ShoppingBag' },
   { id: 'profit',    label: 'Прибыльность',  icon: 'TrendingUp' },
   { id: 'archive',   label: 'Архив',         icon: 'Archive' },
@@ -130,6 +131,24 @@ const Index = () => {
   const updateCell = (s: Size, field: keyof SizeCostRow, val: string) => {
     setActiveCosts(prev => ({ ...prev, [s]: { ...prev[s], [field]: Number(val) || 0 } }))
   }
+
+  // ── Костюмы — модели с ценами продажи ──────────────────────────────────────
+  interface SuitModel { id: string; name: string; prices: Record<Size, number> }
+  const [suitModels, setSuitModels] = useState<SuitModel[]>([
+    { id: 's1', name: 'Таймень',  prices: { S: 14900, M: 14900, L: 15900, XL: 16900 } },
+    { id: 's2', name: 'Сёмга',    prices: { S: 16500, M: 16500, L: 17500, XL: 18500 } },
+    { id: 's3', name: 'Налим',    prices: { S: 12900, M: 12900, L: 13900, XL: 14900 } },
+  ])
+  const [suitSize, setSuitSize] = useState<Size>('M')
+  const [editingSuit, setEditingSuit] = useState<string | null>(null)
+
+  const updateSuitPrice = (modelId: string, s: Size, val: string) =>
+    setSuitModels(p => p.map(m => m.id === modelId ? { ...m, prices: { ...m.prices, [s]: Number(val) || 0 } } : m))
+  const updateSuitName = (modelId: string, name: string) =>
+    setSuitModels(p => p.map(m => m.id === modelId ? { ...m, name } : m))
+  const addSuit = () =>
+    setSuitModels(p => [...p, { id: uid(), name: 'Новый костюм', prices: { S: 0, M: 0, L: 0, XL: 0 } }])
+  const deleteSuit = (id: string) => setSuitModels(p => p.filter(m => m.id !== id))
 
   // Итоговые данные для метрик (куртка M как базовая)
   const uc = rowTotal(jacketCosts['M'])
@@ -553,7 +572,142 @@ const Index = () => {
           </Section>
         )}
 
-        {/* ══ ЗАКАЗЫ ══ */}
+        {/* ══ КОСТЮМЫ ══ */}
+        {tab === 'suits' && (() => {
+          const MARGIN_COLOR = (pct: number) =>
+            pct >= 40 ? 'text-success' : pct >= 20 ? 'text-accent' : 'text-destructive'
+
+          return (
+            <Section title="Костюмы" subtitle="Модели, цены продажи и прибыль по каждому размеру">
+
+              {/* Выбор размера */}
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-muted-foreground">Размер для расчёта:</span>
+                <div className="flex gap-1">
+                  {sizes.map(s => (
+                    <button key={s} onClick={() => setSuitSize(s)}
+                      className={`h-9 w-10 rounded-lg text-sm font-semibold transition-all ${suitSize===s?'bg-accent text-accent-foreground':'border border-border bg-card text-muted-foreground hover:bg-secondary'}`}>
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Карточки костюмов */}
+              <div className="space-y-4">
+                {suitModels.map(model => {
+                  const costJ  = rowTotal(jacketCosts[suitSize])
+                  const costP  = rowTotal(pantsCosts[suitSize])
+                  const costTotal = costJ + costP
+                  const price  = model.prices[suitSize]
+                  const profit = price - costTotal
+                  const margin = price > 0 ? (profit / price) * 100 : 0
+                  const isEditing = editingSuit === model.id
+
+                  return (
+                    <div key={model.id} className="overflow-hidden rounded-2xl border border-border bg-card">
+                      {/* Шапка карточки */}
+                      <div className="flex items-center justify-between border-b border-border px-5 py-4">
+                        <div className="flex items-center gap-3">
+                          {isEditing ? (
+                            <input
+                              autoFocus
+                              value={model.name}
+                              onChange={e => updateSuitName(model.id, e.target.value)}
+                              onBlur={() => setEditingSuit(null)}
+                              onKeyDown={e => e.key === 'Enter' && setEditingSuit(null)}
+                              className="rounded-lg border border-accent bg-background px-3 py-1.5 font-display text-xl font-medium focus:outline-none"
+                            />
+                          ) : (
+                            <span className="font-display text-xl font-medium">{model.name}</span>
+                          )}
+                          <button onClick={() => setEditingSuit(isEditing ? null : model.id)}
+                            className="text-muted-foreground hover:text-foreground transition-colors">
+                            <Icon name={isEditing ? 'Check' : 'Pencil'} size={14} />
+                          </button>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <div className={`text-right ${MARGIN_COLOR(margin)}`}>
+                            <div className="font-display text-3xl font-semibold tabular-nums">{margin.toFixed(0)}%</div>
+                            <div className="text-xs opacity-70">маржа</div>
+                          </div>
+                          <button onClick={() => deleteSuit(model.id)}
+                            className="ml-2 flex h-8 w-8 items-center justify-center rounded-lg border border-border text-muted-foreground hover:text-destructive transition-colors">
+                            <Icon name="Trash2" size={14} />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Тело карточки */}
+                      <div className="p-5">
+                        {/* Цены продажи по всем размерам */}
+                        <div className="mb-5">
+                          <div className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">Цена продажи, ₽</div>
+                          <div className="grid grid-cols-4 gap-2">
+                            {sizes.map(s => (
+                              <div key={s} className={`rounded-xl border p-3 transition-colors ${suitSize===s?'border-accent/40 bg-accent/[0.06]':'border-border bg-secondary/30'}`}>
+                                <div className={`mb-1.5 text-center text-xs font-semibold ${suitSize===s?'text-accent':'text-muted-foreground'}`}>{s}</div>
+                                <input
+                                  type="number"
+                                  value={model.prices[s]}
+                                  onChange={e => updateSuitPrice(model.id, s, e.target.value)}
+                                  className="w-full rounded-lg border border-transparent bg-background/80 px-2 py-1.5 text-center text-sm font-medium tabular-nums hover:border-border focus:border-accent focus:outline-none focus:ring-1 focus:ring-ring"
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Расчёт выбранного размера */}
+                        <div className={`rounded-2xl border p-4 ${profit >= 0 ? 'border-success/20 bg-success/[0.04]' : 'border-destructive/20 bg-destructive/[0.04]'}`}>
+                          <div className="mb-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                            Расчёт · размер {suitSize}
+                          </div>
+                          <div className="grid gap-2 sm:grid-cols-4">
+                            <div className="rounded-xl bg-sky-50 border border-sky-100 px-3 py-2.5 text-center">
+                              <div className="text-xs text-sky-600">Куртка</div>
+                              <div className="mt-0.5 font-semibold tabular-nums text-sky-800">{fmt(costJ)}</div>
+                            </div>
+                            <div className="rounded-xl bg-violet-50 border border-violet-100 px-3 py-2.5 text-center">
+                              <div className="text-xs text-violet-600">Штаны</div>
+                              <div className="mt-0.5 font-semibold tabular-nums text-violet-800">{fmt(costP)}</div>
+                            </div>
+                            <div className="rounded-xl bg-secondary border border-border px-3 py-2.5 text-center">
+                              <div className="text-xs text-muted-foreground">Себестоимость</div>
+                              <div className="mt-0.5 font-semibold tabular-nums">{fmt(costTotal)}</div>
+                            </div>
+                            <div className={`rounded-xl border px-3 py-2.5 text-center ${profit >= 0 ? 'bg-success/10 border-success/20' : 'bg-destructive/10 border-destructive/20'}`}>
+                              <div className={`text-xs ${profit >= 0 ? 'text-success' : 'text-destructive'}`}>Прибыль</div>
+                              <div className={`mt-0.5 font-bold tabular-nums ${profit >= 0 ? 'text-success' : 'text-destructive'}`}>{fmt(profit)}</div>
+                            </div>
+                          </div>
+                          {/* Прогресс-бар маржи */}
+                          <div className="mt-3">
+                            <div className="h-2 overflow-hidden rounded-full bg-secondary">
+                              <div className={`h-full rounded-full transition-all ${margin >= 40 ? 'bg-success' : margin >= 20 ? 'bg-accent' : 'bg-destructive'}`}
+                                style={{ width: `${Math.min(Math.max(margin, 0), 100)}%` }} />
+                            </div>
+                            <div className="mt-1.5 flex justify-between text-xs text-muted-foreground">
+                              <span>Цена: {fmt(price)}</span>
+                              <span className={MARGIN_COLOR(margin)}>Маржа: {margin.toFixed(1)}%</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* Кнопка добавить */}
+              <button onClick={addSuit}
+                className="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-border py-4 text-sm font-medium text-muted-foreground hover:border-accent hover:text-accent transition-colors">
+                <Icon name="Plus" size={16} />Добавить модель костюма
+              </button>
+            </Section>
+          )
+        })()}
+
         {tab === 'orders' && (
           <Section title="Активные заказы" subtitle="Нажмите «Выполнен» — заказ автоматически уйдёт в архив">
             <div className="mb-4 flex items-center justify-between">
