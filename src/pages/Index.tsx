@@ -326,6 +326,32 @@ const Index = () => {
   const removeReminder = (id: string) => setReminders(p => p.filter(r => r.id !== id))
   const overdue = reminders.filter(r => !r.done && r.date < today).length
 
+  // ── Календарь в шапке ─────────────────────────────────────────────────────
+  const [calOpen, setCalOpen] = useState(false)
+  const [calYear,  setCalYear]  = useState(() => new Date().getFullYear())
+  const [calMonth, setCalMonth] = useState(() => new Date().getMonth())
+
+  const calDays = (() => {
+    const firstDay = new Date(calYear, calMonth, 1).getDay()
+    const offset   = (firstDay + 6) % 7  // пн=0
+    const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate()
+    return Array.from({ length: offset + daysInMonth }, (_, i) =>
+      i < offset ? null : i - offset + 1
+    )
+  })()
+
+  const reminderDates = new Set(
+    reminders.filter(r => !r.done).map(r => r.date)
+  )
+  const overdueDates = new Set(
+    reminders.filter(r => !r.done && r.date < today).map(r => r.date)
+  )
+
+  const calDateStr = (day: number) =>
+    `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+
+  const MONTH_NAMES = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь']
+
   // ─────────────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-background bg-grain">
@@ -342,8 +368,95 @@ const Index = () => {
               <div className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">Учёт производства</div>
             </div>
           </div>
-          <div className="hidden items-center gap-2 text-sm text-muted-foreground sm:flex">
-            <Icon name="Calendar" size={15} />Июнь 2026
+          {/* Кнопка-календарь */}
+          <div className="relative hidden sm:block">
+            <button
+              onClick={() => setCalOpen(p => !p)}
+              className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm transition-all ${
+                calOpen
+                  ? 'border-accent bg-accent/10 text-accent'
+                  : 'border-border bg-background text-muted-foreground hover:text-foreground hover:bg-secondary'
+              }`}
+            >
+              <Icon name="Calendar" size={15} />
+              {MONTH_NAMES[calMonth]} {calYear}
+              {overdue > 0 && (
+                <span className="flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-destructive-foreground">{overdue}</span>
+              )}
+            </button>
+
+            {calOpen && (
+              <>
+                {/* Backdrop */}
+                <div className="fixed inset-0 z-30" onClick={() => setCalOpen(false)} />
+                {/* Попап календаря */}
+                <div className="absolute right-0 top-full z-40 mt-2 w-72 rounded-2xl border border-border bg-card shadow-2xl animate-fade-up">
+                  {/* Шапка навигации */}
+                  <div className="flex items-center justify-between border-b border-border px-4 py-3">
+                    <button onClick={() => { if (calMonth === 0) { setCalMonth(11); setCalYear(y => y-1) } else setCalMonth(m => m-1) }}
+                      className="flex h-7 w-7 items-center justify-center rounded-lg hover:bg-secondary transition-colors text-muted-foreground">
+                      <Icon name="ChevronLeft" size={15} />
+                    </button>
+                    <span className="text-sm font-medium">{MONTH_NAMES[calMonth]} {calYear}</span>
+                    <button onClick={() => { if (calMonth === 11) { setCalMonth(0); setCalYear(y => y+1) } else setCalMonth(m => m+1) }}
+                      className="flex h-7 w-7 items-center justify-center rounded-lg hover:bg-secondary transition-colors text-muted-foreground">
+                      <Icon name="ChevronRight" size={15} />
+                    </button>
+                  </div>
+
+                  {/* Дни недели */}
+                  <div className="grid grid-cols-7 px-3 pt-3">
+                    {['Пн','Вт','Ср','Чт','Пт','Сб','Вс'].map(d => (
+                      <div key={d} className="pb-1 text-center text-[10px] font-medium uppercase tracking-wider text-muted-foreground">{d}</div>
+                    ))}
+                  </div>
+
+                  {/* Сетка дней */}
+                  <div className="grid grid-cols-7 gap-y-0.5 px-3 pb-3">
+                    {calDays.map((day, i) => {
+                      if (!day) return <div key={i} />
+                      const ds = calDateStr(day)
+                      const isToday    = ds === today
+                      const hasReminder = reminderDates.has(ds)
+                      const isOverdue  = overdueDates.has(ds)
+                      const dayReminders = reminders.filter(r => !r.done && r.date === ds)
+                      return (
+                        <div key={i} className="relative flex flex-col items-center group">
+                          <div className={`relative flex h-8 w-8 items-center justify-center rounded-full text-sm font-medium transition-colors ${
+                            isToday ? 'bg-primary text-primary-foreground' :
+                            isOverdue ? 'bg-destructive/15 text-destructive' :
+                            hasReminder ? 'bg-accent/15 text-accent' :
+                            'hover:bg-secondary text-foreground'
+                          }`}>
+                            {day}
+                            {/* Точка-индикатор */}
+                            {hasReminder && (
+                              <span className={`absolute bottom-0.5 left-1/2 -translate-x-1/2 h-1 w-1 rounded-full ${isOverdue ? 'bg-destructive' : 'bg-accent'}`} />
+                            )}
+                          </div>
+                          {/* Тултип с напоминаниями */}
+                          {dayReminders.length > 0 && (
+                            <div className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1.5 hidden w-48 -translate-x-1/2 rounded-xl border border-border bg-card p-2.5 shadow-xl group-hover:block">
+                              {dayReminders.map(r => (
+                                <div key={r.id} className={`text-xs leading-snug ${overdueDates.has(r.date) ? 'text-destructive' : 'text-foreground'}`}>
+                                  · {r.text}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+
+                  {/* Легенда */}
+                  <div className="flex items-center gap-4 border-t border-border px-4 py-2.5 text-xs text-muted-foreground">
+                    <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-accent" />Напоминание</span>
+                    <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-destructive" />Просрочено</span>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </header>
