@@ -30,19 +30,32 @@ interface WriteOff {
 }
 // ── Тип таблицы себестоимости (куртка / штаны) ───────────────────────────────
 type GarmentType = 'jacket' | 'pants'
-interface SizeCostRow {
-  fabric: number      // ткань
-  hardware: number    // фурнитура
-  sewing: number      // пошив
-  taxes: number       // налоги
-  marketing: number   // реклама
-  logistics: number   // логистика
-}
-type SizeCostTable = Record<Size, SizeCostRow>
 
-const defaultRow = (fabric: number, hardware: number, sewing: number): SizeCostRow => ({
-  fabric, hardware, sewing, taxes: 1490, marketing: 900, logistics: 350,
-})
+// Одна статья затрат — название + значения по каждому размеру
+interface CostLine {
+  id: string
+  label: string
+  icon: string
+  values: Record<Size, number>
+}
+type CostLineTable = CostLine[]
+
+const defaultLines = (
+  fabric: number, hardware: number, sewing: number
+): CostLineTable => [
+  { id: 'fabric',    label: 'Ткань',     icon: 'Layers',    values: { S: Math.round(fabric*0.9),   M: fabric,   L: Math.round(fabric*1.1),   XL: Math.round(fabric*1.22)   } },
+  { id: 'hardware',  label: 'Фурнитура', icon: 'Settings2', values: { S: hardware, M: hardware, L: hardware, XL: hardware } },
+  { id: 'sewing',    label: 'Пошив',     icon: 'Scissors',  values: { S: Math.round(sewing*0.9),   M: sewing,   L: Math.round(sewing*1.1),   XL: Math.round(sewing*1.22)   } },
+  { id: 'taxes',     label: 'Налоги',    icon: 'Landmark',  values: { S: 1490, M: 1490, L: 1490, XL: 1490 } },
+  { id: 'marketing', label: 'Реклама',   icon: 'Megaphone', values: { S: 900,  M: 900,  L: 900,  XL: 900  } },
+  { id: 'logistics', label: 'Логистика', icon: 'Truck',     values: { S: 350,  M: 350,  L: 350,  XL: 350  } },
+]
+const tableTotal = (lines: CostLineTable, s: Size) => lines.reduce((sum, l) => sum + (l.values[s] || 0), 0)
+
+// legacy — для совместимости с карточками костюмов
+interface SizeCostRow { fabric: number; hardware: number; sewing: number; taxes: number; marketing: number; logistics: number }
+type SizeCostTable = Record<Size, SizeCostRow>
+const defaultRow = (fabric: number, hardware: number, sewing: number): SizeCostRow => ({ fabric, hardware, sewing, taxes: 1490, marketing: 900, logistics: 350 })
 const rowTotal = (r: SizeCostRow) => r.fabric + r.hardware + r.sewing + r.taxes + r.marketing + r.logistics
 
 // ── Константы UI ──────────────────────────────────────────────────────────────
@@ -157,6 +170,23 @@ const Index = () => {
   const fabricTotal  = (lines: FabricLine[]) => lines.reduce((s, l) => s + l.meters * l.pricePerM, 0)
   const hwTotal      = (lines: HardwareLine[]) => lines.reduce((s, l) => s + (l.unit === 'м' ? l.meters : l.qty) * l.pricePerUnit, 0)
 
+  // Новый динамический стейт статей для куртки и штанов
+  const [jacketLines, setJacketLines] = useState<CostLineTable>(defaultLines(4200, 1200, 1800))
+  const [pantsLines,  setPantsLines]  = useState<CostLineTable>(defaultLines(2300, 600, 1100))
+
+  const activeLines    = garment === 'jacket' ? jacketLines : pantsLines
+  const setActiveLines = garment === 'jacket' ? setJacketLines : setPantsLines
+
+  const updateLineValue = (id: string, s: Size, val: string) =>
+    setActiveLines(p => p.map(l => l.id === id ? { ...l, values: { ...l.values, [s]: Number(val) || 0 } } : l))
+  const updateLineLabel = (id: string, label: string) =>
+    setActiveLines(p => p.map(l => l.id === id ? { ...l, label } : l))
+  const addLine = () =>
+    setActiveLines(p => [...p, { id: uid(), label: 'Новая статья', icon: 'Tag', values: { S: 0, M: 0, L: 0, XL: 0 } }])
+  const removeLine = (id: string) =>
+    setActiveLines(p => p.filter(l => l.id !== id))
+
+  // Legacy-совместимость для раздела Костюмы (rowTotal)
   const [jacketCosts, setJacketCosts] = useState<SizeCostTable>({
     S:  defaultRow(3800, 1200, 1600),
     M:  defaultRow(4200, 1200, 1800),
@@ -172,10 +202,8 @@ const Index = () => {
 
   const activeCosts = garment === 'jacket' ? jacketCosts : pantsCosts
   const setActiveCosts = garment === 'jacket' ? setJacketCosts : setPantsCosts
-
-  const updateCell = (s: Size, field: keyof SizeCostRow, val: string) => {
+  const updateCell = (s: Size, field: keyof SizeCostRow, val: string) =>
     setActiveCosts(prev => ({ ...prev, [s]: { ...prev[s], [field]: Number(val) || 0 } }))
-  }
 
   // ── Костюмы — модели с ценами продажи ──────────────────────────────────────
   interface SuitModel { id: string; name: string; prices: Record<Size, number> }
@@ -195,19 +223,11 @@ const Index = () => {
     setSuitModels(p => [...p, { id: uid(), name: 'Новый костюм', prices: { S: 0, M: 0, L: 0, XL: 0 } }])
   const deleteSuit = (id: string) => setSuitModels(p => p.filter(m => m.id !== id))
 
-  // Итоговые данные для метрик (куртка M как базовая)
-  const uc = rowTotal(jacketCosts['M'])
-  const sizeUc = rowTotal(activeCosts[size])
-  const sizeRow = activeCosts[size]
-  const sizeBreakdown = [
-    { label: 'Ткань',     value: sizeRow.fabric },
-    { label: 'Фурнитура', value: sizeRow.hardware },
-    { label: 'Пошив',     value: sizeRow.sewing },
-    { label: 'Налоги',    value: sizeRow.taxes },
-    { label: 'Реклама',   value: sizeRow.marketing },
-    { label: 'Логистика', value: sizeRow.logistics },
-  ]
-  const ohTotal = sizeRow.taxes + sizeRow.marketing + sizeRow.logistics
+  // Итоговые данные для метрик — считаем от динамических строк
+  const uc         = tableTotal(jacketLines, 'M')
+  const sizeUc     = tableTotal(activeLines, size)
+  const sizeBreakdown = activeLines.map(l => ({ label: l.label, value: l.values[size] || 0 }))
+  const ohTotal    = sizeUc
 
   // ── Заказы (активные) ──────────────────────────────────────────────────────
   const today = new Date().toISOString().split('T')[0]
@@ -665,56 +685,67 @@ const Index = () => {
               </table>
             </div>
 
-            {/* Таблица с прямым редактированием */}
+            {/* Таблица статей затрат — редактируемые строки */}
             <div className="overflow-hidden rounded-2xl border border-border bg-card">
-              <div className="border-b border-border bg-secondary/30 px-5 py-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                {garment==='jacket'?'Куртка':'Штаны'} — себестоимость по размерам (₽), кликните ячейку для редактирования
+              <div className="flex items-center justify-between border-b border-border bg-secondary/30 px-5 py-3">
+                <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                  {garment==='jacket'?'Куртка':'Штаны'} — статьи затрат по размерам (₽)
+                </span>
+                <button onClick={addLine}
+                  className="flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
+                  <Icon name="Plus" size={12} />Добавить статью
+                </button>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
-                  <thead><tr className="border-b border-border bg-secondary/50 text-xs uppercase tracking-wider text-muted-foreground">
-                    <th className="px-4 py-3 text-left font-medium">Статья</th>
+                  <thead><tr className="border-b border-border bg-secondary/40 text-xs uppercase tracking-wider text-muted-foreground">
+                    <th className="px-4 py-2.5 text-left font-medium">Статья</th>
                     {sizes.map(s => (
-                      <th key={s} className="px-3 py-3 text-center font-medium">
+                      <th key={s} className="px-3 py-2.5 text-center font-medium">
                         <button onClick={() => setSize(s)} className={`inline-flex h-7 w-9 items-center justify-center rounded-md text-xs font-semibold transition-colors ${size===s?'bg-accent text-accent-foreground':'bg-primary text-primary-foreground hover:bg-accent hover:text-accent-foreground'}`}>{s}</button>
                       </th>
                     ))}
+                    <th className="w-8" />
                   </tr></thead>
                   <tbody>
-                    {([
-                      ['fabric',    'Ткань',      'Layers'],
-                      ['hardware',  'Фурнитура',  'Settings2'],
-                      ['sewing',    'Пошив',      'Scissors'],
-                      ['taxes',     'Налоги',     'Landmark'],
-                      ['marketing', 'Реклама',    'Megaphone'],
-                      ['logistics', 'Логистика',  'Truck'],
-                    ] as [keyof SizeCostRow, string, string][]).map(([field, label, icon]) => (
-                      <tr key={field} className="border-b border-border/60 last:border-0 hover:bg-secondary/20 transition-colors">
-                        <td className="px-4 py-2.5">
-                          <span className="flex items-center gap-2 text-muted-foreground">
-                            <Icon name={icon} size={14} />{label}
-                          </span>
+                    {activeLines.map(line => (
+                      <tr key={line.id} className="group border-b border-border/50 last:border-0 hover:bg-secondary/20 transition-colors">
+                        <td className="px-3 py-1.5 w-44">
+                          <div className="flex items-center gap-1.5">
+                            <Icon name={line.icon} size={13} className="shrink-0 text-muted-foreground/50" />
+                            <input
+                              value={line.label}
+                              onChange={e => updateLineLabel(line.id, e.target.value)}
+                              className="min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-2 py-1 text-sm font-medium hover:border-border focus:border-accent focus:bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+                            />
+                          </div>
                         </td>
                         {sizes.map(s => (
-                          <td key={s} className={`px-3 py-2 ${size===s?'bg-accent/5':''}`}>
+                          <td key={s} className={`px-3 py-1.5 ${size===s?'bg-accent/5':''}`}>
                             <input
                               type="number"
-                              value={activeCosts[s][field]}
-                              onChange={e => updateCell(s, field, e.target.value)}
-                              className="w-full min-w-[80px] rounded-lg border border-transparent bg-secondary/60 px-2 py-1.5 text-right text-sm tabular-nums transition-colors hover:border-border focus:border-accent focus:bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+                              value={line.values[s]}
+                              onChange={e => updateLineValue(line.id, s, e.target.value)}
+                              className="w-full min-w-[76px] rounded-lg border border-transparent bg-secondary/50 px-2 py-1.5 text-right text-sm tabular-nums hover:border-border focus:border-accent focus:bg-background focus:outline-none focus:ring-1 focus:ring-ring"
                             />
                           </td>
                         ))}
+                        <td className="px-2 py-1.5 text-center">
+                          <button onClick={() => removeLine(line.id)}
+                            className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all">
+                            <Icon name="Trash2" size={13} />
+                          </button>
+                        </td>
                       </tr>
                     ))}
-                    {/* Итого */}
                     <tr className="border-t-2 border-border bg-secondary/50 font-semibold">
-                      <td className="px-4 py-3 text-foreground">Итого</td>
+                      <td className="px-4 py-3 text-xs uppercase tracking-wider text-muted-foreground">Итого</td>
                       {sizes.map(s => (
-                        <td key={s} className={`px-3 py-3 text-right tabular-nums ${size===s?'text-accent':''}`}>
-                          {fmt(rowTotal(activeCosts[s]))}
+                        <td key={s} className={`px-3 py-3 text-right tabular-nums ${size===s?'text-accent font-bold text-base':'text-foreground'}`}>
+                          {fmt(tableTotal(activeLines, s))}
                         </td>
                       ))}
+                      <td />
                     </tr>
                   </tbody>
                 </table>
