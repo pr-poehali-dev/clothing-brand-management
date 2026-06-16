@@ -9,6 +9,11 @@ import {
   costBreakdown,
   unitCost,
   profitByProduct,
+  costBySize,
+  sizes,
+  Size,
+  overhead,
+  overheadTotal,
   fmt,
 } from '@/lib/atelier-data';
 
@@ -26,10 +31,14 @@ const tabs: { id: Tab; label: string; icon: string }[] = [
 
 const Index = () => {
   const [tab, setTab] = useState<Tab>('dashboard');
+  const [size, setSize] = useState<Size>('M');
   const t = totals();
-  const breakdown = costBreakdown();
-  const uc = Math.round(unitCost());
+  const breakdown = costBreakdown('M');
+  const uc = Math.round(unitCost('M'));
   const products = profitByProduct();
+  const sizeBreakdown = costBreakdown(size);
+  const sizeUc = Math.round(unitCost(size));
+  const bySize = costBySize();
 
   return (
     <div className="min-h-screen bg-background bg-grain">
@@ -158,13 +167,92 @@ const Index = () => {
         )}
 
         {tab === 'cost' && (
-          <Section title="Расчёт себестоимости" subtitle="Полная стоимость одного изделия">
+          <Section title="Расчёт себестоимости" subtitle="Полная стоимость одного изделия по размерам">
+            {/* Постоянные расходы */}
+            <div className="mb-6 rounded-2xl border border-accent/30 bg-accent/[0.06] p-6">
+              <div className="flex items-center gap-2">
+                <Icon name="Repeat" size={16} className="text-accent" />
+                <h3 className="font-display text-xl font-medium">Постоянные расходы</h3>
+              </div>
+              <p className="mb-4 text-sm text-muted-foreground">
+                Автоматически входят в любой костюм — {fmt(overheadTotal)} на изделие
+              </p>
+              <div className="grid gap-3 sm:grid-cols-3">
+                {[
+                  { l: 'Налоги', v: overhead.taxes, i: 'Landmark' },
+                  { l: 'Реклама', v: overhead.marketing, i: 'Megaphone' },
+                  { l: 'Логистика', v: overhead.logistics, i: 'Truck' },
+                ].map((o) => (
+                  <div key={o.l} className="flex items-center justify-between rounded-xl bg-card px-4 py-3">
+                    <span className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Icon name={o.i} size={15} /> {o.l}
+                    </span>
+                    <span className="font-medium tabular-nums">{fmt(o.v)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Себестоимость по размерам — таблица */}
+            <div className="mb-6 overflow-hidden rounded-2xl border border-border bg-card">
+              <div className="border-b border-border px-5 py-4">
+                <h3 className="font-display text-xl font-medium">Себестоимость по размерам</h3>
+                <p className="text-sm text-muted-foreground">Расход ткани и пошив зависят от размера</p>
+              </div>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border bg-secondary/50 text-left text-xs uppercase tracking-wider text-muted-foreground">
+                    <th className="px-5 py-3 font-medium">Размер</th>
+                    <th className="px-5 py-3 text-right font-medium">Материалы</th>
+                    <th className="px-5 py-3 text-right font-medium">Постоянные</th>
+                    <th className="px-5 py-3 text-right font-medium">Итого</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {bySize.map((s) => (
+                    <tr
+                      key={s.size}
+                      onClick={() => setSize(s.size)}
+                      className={`cursor-pointer border-b border-border/60 last:border-0 transition-colors ${
+                        size === s.size ? 'bg-accent/10' : 'hover:bg-secondary/30'
+                      }`}
+                    >
+                      <td className="px-5 py-3.5">
+                        <span className="inline-flex h-7 w-9 items-center justify-center rounded-md bg-primary text-xs font-semibold text-primary-foreground">
+                          {s.size}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3.5 text-right tabular-nums text-muted-foreground">{fmt(s.material)}</td>
+                      <td className="px-5 py-3.5 text-right tabular-nums text-muted-foreground">{fmt(overheadTotal)}</td>
+                      <td className="px-5 py-3.5 text-right font-semibold tabular-nums">{fmt(s.cost)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Детализация выбранного размера */}
             <div className="grid gap-6 lg:grid-cols-[1fr_1.2fr]">
               <div className="rounded-2xl border border-border bg-primary p-8 text-primary-foreground">
-                <div className="text-xs uppercase tracking-[0.2em] opacity-70">Итого на изделие</div>
-                <div className="mt-3 font-display text-6xl font-medium">{fmt(uc)}</div>
+                <div className="mb-4 flex gap-1.5">
+                  {sizes.map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => setSize(s)}
+                      className={`h-9 w-11 rounded-lg text-sm font-semibold transition-all ${
+                        size === s
+                          ? 'bg-accent text-accent-foreground'
+                          : 'bg-primary-foreground/10 text-primary-foreground/70 hover:bg-primary-foreground/20'
+                      }`}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+                <div className="text-xs uppercase tracking-[0.2em] opacity-70">Итого · размер {size}</div>
+                <div className="mt-2 font-display text-6xl font-medium">{fmt(sizeUc)}</div>
                 <div className="mt-6 space-y-2 text-sm opacity-80">
-                  {breakdown.map((b) => (
+                  {sizeBreakdown.map((b) => (
                     <div key={b.label} className="flex justify-between border-b border-primary-foreground/15 pb-2">
                       <span>{b.label}</span>
                       <span className="tabular-nums">{fmt(b.value)}</span>
@@ -173,9 +261,9 @@ const Index = () => {
                 </div>
               </div>
               <div className="rounded-2xl border border-border bg-card p-6">
-                <h3 className="mb-1 font-display text-2xl font-medium">Распределение затрат</h3>
+                <h3 className="mb-1 font-display text-2xl font-medium">Распределение затрат · {size}</h3>
                 <p className="mb-6 text-sm text-muted-foreground">Что формирует стоимость</p>
-                <CostChart items={breakdown} total={uc} />
+                <CostChart items={sizeBreakdown} total={sizeUc} />
               </div>
             </div>
           </Section>
