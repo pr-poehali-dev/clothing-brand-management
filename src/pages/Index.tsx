@@ -9,7 +9,6 @@ import {
   materials as initialMaterials,
   sizes,
   Size,
-  sizeFactor,
   fmt,
 } from '@/lib/atelier-data';
 
@@ -29,32 +28,22 @@ interface ArchiveOrder extends ActiveOrder { completedAt: string }
 interface WriteOff {
   id: string; date: string; materialName: string; qty: number; unit: string; reason: string;
 }
-interface Overhead { taxes: number; marketing: number; logistics: number }
+// ── Тип таблицы себестоимости (куртка / штаны) ───────────────────────────────
+type GarmentType = 'jacket' | 'pants'
+interface SizeCostRow {
+  fabric: number      // ткань
+  hardware: number    // фурнитура
+  sewing: number      // пошив
+  taxes: number       // налоги
+  marketing: number   // реклама
+  logistics: number   // логистика
+}
+type SizeCostTable = Record<Size, SizeCostRow>
 
-// ── Расчёты (принимают параметры, не из модуля) ──────────────────────────────
-function calcMaterialCost(mats: Material[], size: Size) {
-  return mats.reduce((s, m) => {
-    const factor = m.type === 'Ткань' ? sizeFactor[size] : 1
-    return s + m.pricePerUnit * m.perItem * factor
-  }, 0)
-}
-function calcUnitCost(mats: Material[], size: Size, labor: number, oh: Overhead) {
-  return calcMaterialCost(mats, size) + labor * sizeFactor[size]
-    + oh.taxes + oh.marketing + oh.logistics
-}
-function calcBreakdown(mats: Material[], size: Size, labor: number, oh: Overhead) {
-  const factor = sizeFactor[size]
-  const fabric   = mats.filter(m => m.type === 'Ткань').reduce((s, m) => s + m.pricePerUnit * m.perItem * factor, 0)
-  const hardware = mats.filter(m => m.type === 'Фурнитура').reduce((s, m) => s + m.pricePerUnit * m.perItem, 0)
-  return [
-    { label: 'Ткань',      value: Math.round(fabric) },
-    { label: 'Фурнитура',  value: Math.round(hardware) },
-    { label: 'Пошив',      value: Math.round(labor * factor) },
-    { label: 'Налоги',     value: oh.taxes },
-    { label: 'Реклама',    value: oh.marketing },
-    { label: 'Логистика',  value: oh.logistics },
-  ]
-}
+const defaultRow = (fabric: number, hardware: number, sewing: number): SizeCostRow => ({
+  fabric, hardware, sewing, taxes: 1490, marketing: 900, logistics: 350,
+})
+const rowTotal = (r: SizeCostRow) => r.fabric + r.hardware + r.sewing + r.taxes + r.marketing + r.logistics
 
 // ── Константы UI ──────────────────────────────────────────────────────────────
 const NOTE_COLORS: Record<NoteColor, string> = {
@@ -119,56 +108,42 @@ const Index = () => {
   const setS = (key: keyof Supplier, val: string) =>
     setMatForm(p => ({ ...p, supplier: { ...p.supplier, [key]: key === 'deliveryDays' ? Number(val) : val } }))
 
-  // ── Редактируемая себестоимость ─────────────────────────────────────────────
-  const [labor, setLabor] = useState(1800)
-  const [oh, setOh] = useState<Overhead>({ taxes: 1490, marketing: 900, logistics: 350 })
-  const [editCost, setEditCost] = useState(false)
-  const [costDraft, setCostDraft] = useState({ labor, ...oh })
+  // ── Себестоимость — прямые таблицы (куртка / штаны) ────────────────────────
+  const [garment, setGarment] = useState<GarmentType>('jacket')
 
-  const openCostEdit = () => { setCostDraft({ labor, ...oh }); setEditCost(true) }
-  const saveCostEdit = () => {
-    setLabor(costDraft.labor)
-    setOh({ taxes: costDraft.taxes, marketing: costDraft.marketing, logistics: costDraft.logistics })
-    setEditCost(false)
+  const [jacketCosts, setJacketCosts] = useState<SizeCostTable>({
+    S:  defaultRow(3800, 1200, 1600),
+    M:  defaultRow(4200, 1200, 1800),
+    L:  defaultRow(4700, 1200, 1900),
+    XL: defaultRow(5300, 1200, 2100),
+  })
+  const [pantsCosts, setPantsCosts] = useState<SizeCostTable>({
+    S:  defaultRow(2100, 600, 1000),
+    M:  defaultRow(2300, 600, 1100),
+    L:  defaultRow(2600, 600, 1200),
+    XL: defaultRow(2900, 600, 1300),
+  })
+
+  const activeCosts = garment === 'jacket' ? jacketCosts : pantsCosts
+  const setActiveCosts = garment === 'jacket' ? setJacketCosts : setPantsCosts
+
+  const updateCell = (s: Size, field: keyof SizeCostRow, val: string) => {
+    setActiveCosts(prev => ({ ...prev, [s]: { ...prev[s], [field]: Number(val) || 0 } }))
   }
 
-  // ── Редактируемые коэффициенты размеров ─────────────────────────────────────
-  const [sizeFactors, setSizeFactors] = useState<Record<Size, number>>({ S: 0.9, M: 1.0, L: 1.1, XL: 1.22 })
-  const [editSizes, setEditSizes] = useState(false)
-  const [sizeDraft, setSizeDraft] = useState<Record<Size, number>>({ ...sizeFactors })
-
-  const openSizeEdit = () => { setSizeDraft({ ...sizeFactors }); setEditSizes(true) }
-  const saveSizeEdit = () => { setSizeFactors({ ...sizeDraft }); setEditSizes(false) }
-
-  // Производные расчёты себестоимости (используют sizeFactors вместо статичного sizeFactor)
-  function calcMatCostLocal(mats: Material[], s: Size) {
-    return mats.reduce((acc, m) => {
-      const f = m.type === 'Ткань' ? sizeFactors[s] : 1
-      return acc + m.pricePerUnit * m.perItem * f
-    }, 0)
-  }
-  function calcUnitLocal(mats: Material[], s: Size) {
-    return calcMatCostLocal(mats, s) + labor * sizeFactors[s] + oh.taxes + oh.marketing + oh.logistics
-  }
-  function calcBdLocal(mats: Material[], s: Size) {
-    const f = sizeFactors[s]
-    const fabric   = mats.filter(m => m.type === 'Ткань').reduce((acc, m) => acc + m.pricePerUnit * m.perItem * f, 0)
-    const hardware = mats.filter(m => m.type === 'Фурнитура').reduce((acc, m) => acc + m.pricePerUnit * m.perItem, 0)
-    return [
-      { label: 'Ткань',     value: Math.round(fabric) },
-      { label: 'Фурнитура', value: Math.round(hardware) },
-      { label: 'Пошив',     value: Math.round(labor * f) },
-      { label: 'Налоги',    value: oh.taxes },
-      { label: 'Реклама',   value: oh.marketing },
-      { label: 'Логистика', value: oh.logistics },
-    ]
-  }
-
-  const ohTotal       = oh.taxes + oh.marketing + oh.logistics
-  const uc            = Math.round(calcUnitLocal(matList, 'M'))
-  const sizeUc        = Math.round(calcUnitLocal(matList, size))
-  const sizeBreakdown = calcBdLocal(matList, size)
-  const bySize        = sizes.map(s => ({ size: s, material: Math.round(calcMatCostLocal(matList, s)), cost: Math.round(calcUnitLocal(matList, s)), factor: sizeFactors[s] }))
+  // Итоговые данные для метрик (куртка M как базовая)
+  const uc = rowTotal(jacketCosts['M'])
+  const sizeUc = rowTotal(activeCosts[size])
+  const sizeRow = activeCosts[size]
+  const sizeBreakdown = [
+    { label: 'Ткань',     value: sizeRow.fabric },
+    { label: 'Фурнитура', value: sizeRow.hardware },
+    { label: 'Пошив',     value: sizeRow.sewing },
+    { label: 'Налоги',    value: sizeRow.taxes },
+    { label: 'Реклама',   value: sizeRow.marketing },
+    { label: 'Логистика', value: sizeRow.logistics },
+  ]
+  const ohTotal = sizeRow.taxes + sizeRow.marketing + sizeRow.logistics
 
   // ── Заказы (активные) ──────────────────────────────────────────────────────
   const today = new Date().toISOString().split('T')[0]
@@ -476,72 +451,80 @@ const Index = () => {
 
         {/* ══ СЕБЕСТОИМОСТЬ ══ */}
         {tab === 'cost' && (
-          <Section title="Расчёт себестоимости" subtitle="Полная стоимость одного изделия по размерам">
+          <Section title="Расчёт себестоимости" subtitle="Редактируйте каждую ячейку — итог пересчитывается мгновенно">
 
-            {/* Постоянные расходы — редактируемый блок */}
-            <div className="mb-6 rounded-2xl border border-accent/30 bg-accent/[0.06] p-6">
-              <div className="mb-4 flex items-center justify-between">
-                <div>
-                  <div className="flex items-center gap-2"><Icon name="Repeat" size={16} className="text-accent" /><h3 className="font-display text-xl font-medium">Постоянные расходы</h3></div>
-                  <p className="mt-0.5 text-sm text-muted-foreground">Автоматически входят в любой костюм — {fmt(ohTotal + labor)} на изделие (размер M)</p>
-                </div>
-                <button onClick={openCostEdit} className="flex items-center gap-2 rounded-xl border border-accent/40 bg-card px-3 py-2 text-sm font-medium text-accent hover:bg-accent/10 transition-colors">
-                  <Icon name="Pencil" size={14} />Редактировать
-                </button>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-4">
-                {[
-                  { l: 'Пошив (базовый)',  v: labor,          i: 'Scissors',  hint: 'масштабируется по размеру' },
-                  { l: 'Налоги',           v: oh.taxes,       i: 'Landmark',  hint: 'на изделие' },
-                  { l: 'Реклама',          v: oh.marketing,   i: 'Megaphone', hint: 'на изделие' },
-                  { l: 'Логистика',        v: oh.logistics,   i: 'Truck',     hint: 'на изделие' },
-                ].map(o => (
-                  <div key={o.l} className="rounded-xl bg-card px-4 py-3">
-                    <div className="flex items-center gap-1.5 text-sm text-muted-foreground"><Icon name={o.i} size={14} />{o.l}</div>
-                    <div className="mt-1 font-display text-2xl font-medium tabular-nums">{fmt(o.v)}</div>
-                    <div className="text-xs text-muted-foreground">{o.hint}</div>
-                  </div>
+            {/* Переключатель куртка / штаны */}
+            <div className="flex items-center gap-3">
+              <div className="flex gap-1 rounded-xl border border-border bg-card p-1">
+                {([['jacket','Куртка','Shirt'],['pants','Штаны','PersonStanding']] as [GarmentType,string,string][]).map(([id,label,icon]) => (
+                  <button key={id} onClick={() => setGarment(id)}
+                    className={`flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-medium transition-all ${garment===id?'bg-primary text-primary-foreground':'text-muted-foreground hover:bg-secondary'}`}>
+                    <Icon name={icon} size={15} />{label}
+                  </button>
                 ))}
               </div>
+              <span className="text-sm text-muted-foreground">
+                Итого {garment==='jacket'?'куртка':'штаны'} · M = <span className="font-semibold text-foreground">{fmt(rowTotal(activeCosts['M']))}</span>
+              </span>
             </div>
 
-            {/* Таблица по размерам */}
-            <div className="mb-6 overflow-hidden rounded-2xl border border-border bg-card">
-              <div className="flex items-center justify-between border-b border-border px-5 py-4">
-                <div>
-                  <h3 className="font-display text-xl font-medium">Себестоимость по размерам</h3>
-                  <p className="text-sm text-muted-foreground">Нажмите строку для детализации · коэффициент влияет на ткань и пошив</p>
-                </div>
-                <button onClick={openSizeEdit}
-                  className="flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-2 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
-                  <Icon name="Pencil" size={14} />Коэффициенты
-                </button>
+            {/* Таблица с прямым редактированием */}
+            <div className="overflow-hidden rounded-2xl border border-border bg-card">
+              <div className="border-b border-border bg-secondary/30 px-5 py-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                {garment==='jacket'?'Куртка':'Штаны'} — себестоимость по размерам (₽), кликните ячейку для редактирования
               </div>
-              <table className="w-full text-sm">
-                <thead><tr className="border-b border-border bg-secondary/50 text-left text-xs uppercase tracking-wider text-muted-foreground">
-                  <th className="px-5 py-3 font-medium">Размер</th>
-                  <th className="px-5 py-3 text-right font-medium">Коэф.</th>
-                  <th className="px-5 py-3 text-right font-medium">Материалы</th>
-                  <th className="px-5 py-3 text-right font-medium">Накладные</th>
-                  <th className="px-5 py-3 text-right font-medium">Итого</th>
-                </tr></thead>
-                <tbody>
-                  {bySize.map(s => (
-                    <tr key={s.size} onClick={() => setSize(s.size)} className={`cursor-pointer border-b border-border/60 last:border-0 transition-colors ${size===s.size?'bg-accent/10':'hover:bg-secondary/30'}`}>
-                      <td className="px-5 py-3.5"><span className={`inline-flex h-7 w-9 items-center justify-center rounded-md text-xs font-semibold ${size===s.size?'bg-accent text-accent-foreground':'bg-primary text-primary-foreground'}`}>{s.size}</span></td>
-                      <td className="px-5 py-3.5 text-right tabular-nums">
-                        <span className="rounded-lg bg-secondary px-2 py-1 text-xs font-medium tabular-nums">×{s.factor.toFixed(2)}</span>
-                      </td>
-                      <td className="px-5 py-3.5 text-right tabular-nums text-muted-foreground">{fmt(s.material)}</td>
-                      <td className="px-5 py-3.5 text-right tabular-nums text-muted-foreground">{fmt(ohTotal)}</td>
-                      <td className="px-5 py-3.5 text-right font-semibold tabular-nums">{fmt(s.cost)}</td>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead><tr className="border-b border-border bg-secondary/50 text-xs uppercase tracking-wider text-muted-foreground">
+                    <th className="px-4 py-3 text-left font-medium">Статья</th>
+                    {sizes.map(s => (
+                      <th key={s} className="px-3 py-3 text-center font-medium">
+                        <button onClick={() => setSize(s)} className={`inline-flex h-7 w-9 items-center justify-center rounded-md text-xs font-semibold transition-colors ${size===s?'bg-accent text-accent-foreground':'bg-primary text-primary-foreground hover:bg-accent hover:text-accent-foreground'}`}>{s}</button>
+                      </th>
+                    ))}
+                  </tr></thead>
+                  <tbody>
+                    {([
+                      ['fabric',    'Ткань',      'Layers'],
+                      ['hardware',  'Фурнитура',  'Settings2'],
+                      ['sewing',    'Пошив',      'Scissors'],
+                      ['taxes',     'Налоги',     'Landmark'],
+                      ['marketing', 'Реклама',    'Megaphone'],
+                      ['logistics', 'Логистика',  'Truck'],
+                    ] as [keyof SizeCostRow, string, string][]).map(([field, label, icon]) => (
+                      <tr key={field} className="border-b border-border/60 last:border-0 hover:bg-secondary/20 transition-colors">
+                        <td className="px-4 py-2.5">
+                          <span className="flex items-center gap-2 text-muted-foreground">
+                            <Icon name={icon} size={14} />{label}
+                          </span>
+                        </td>
+                        {sizes.map(s => (
+                          <td key={s} className={`px-3 py-2 ${size===s?'bg-accent/5':''}`}>
+                            <input
+                              type="number"
+                              value={activeCosts[s][field]}
+                              onChange={e => updateCell(s, field, e.target.value)}
+                              className="w-full min-w-[80px] rounded-lg border border-transparent bg-secondary/60 px-2 py-1.5 text-right text-sm tabular-nums transition-colors hover:border-border focus:border-accent focus:bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+                            />
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                    {/* Итого */}
+                    <tr className="border-t-2 border-border bg-secondary/50 font-semibold">
+                      <td className="px-4 py-3 text-foreground">Итого</td>
+                      {sizes.map(s => (
+                        <td key={s} className={`px-3 py-3 text-right tabular-nums ${size===s?'text-accent':''}`}>
+                          {fmt(rowTotal(activeCosts[s]))}
+                        </td>
+                      ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </tbody>
+                </table>
+              </div>
             </div>
 
-            {/* Детализация по выбранному размеру */}
+            {/* Детализация выбранного размера */}
             <div className="grid gap-6 lg:grid-cols-[1fr_1.2fr]">
               <div className="rounded-2xl border border-border bg-primary p-8 text-primary-foreground">
                 <div className="mb-4 flex gap-1.5">
@@ -549,17 +532,21 @@ const Index = () => {
                     <button key={s} onClick={() => setSize(s)} className={`h-9 w-11 rounded-lg text-sm font-semibold transition-all ${size===s?'bg-accent text-accent-foreground':'bg-primary-foreground/10 text-primary-foreground/70 hover:bg-primary-foreground/20'}`}>{s}</button>
                   ))}
                 </div>
-                <div className="text-xs uppercase tracking-[0.2em] opacity-70">Итого · размер {size}</div>
+                <div className="text-xs uppercase tracking-[0.2em] opacity-70">{garment==='jacket'?'Куртка':'Штаны'} · размер {size}</div>
                 <div className="mt-2 font-display text-6xl font-medium">{fmt(sizeUc)}</div>
                 <div className="mt-6 space-y-2 text-sm opacity-80">
                   {sizeBreakdown.map(b => (
-                    <div key={b.label} className="flex justify-between border-b border-primary-foreground/15 pb-2"><span>{b.label}</span><span className="tabular-nums">{fmt(b.value)}</span></div>
+                    <div key={b.label} className="flex justify-between border-b border-primary-foreground/15 pb-2">
+                      <span>{b.label}</span><span className="tabular-nums">{fmt(b.value)}</span>
+                    </div>
                   ))}
                 </div>
               </div>
               <div className="rounded-2xl border border-border bg-card p-6">
-                <h3 className="mb-1 font-display text-2xl font-medium">Распределение затрат · {size}</h3>
-                <p className="mb-6 text-sm text-muted-foreground">Что формирует стоимость</p>
+                <h3 className="mb-1 font-display text-2xl font-medium">
+                  {garment==='jacket'?'Куртка':'Штаны'} · размер {size}
+                </h3>
+                <p className="mb-6 text-sm text-muted-foreground">Структура затрат</p>
                 <CostChart items={sizeBreakdown} total={sizeUc} />
               </div>
             </div>
@@ -756,77 +743,6 @@ const Index = () => {
       <footer className="border-t border-border/70 py-8 text-center text-sm text-muted-foreground">
         Арапайма · система учёта производства · {new Date().getFullYear()}
       </footer>
-
-      {/* Модалка: редактирование себестоимости */}
-      {editCost && (
-        <Modal title="Постоянные расходы на изделие" onClose={() => setEditCost(false)} onSave={saveCostEdit}>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="sm:col-span-2 rounded-xl bg-secondary/50 px-4 py-3 text-sm text-muted-foreground">
-              Эти значения влияют на все расчёты себестоимости и прибыльности
-            </div>
-            <FInput label="Пошив — базовая стоимость, ₽ (размер M)" type="number" value={costDraft.labor}      onChange={v => setCostDraft(p => ({ ...p, labor:     Number(v) }))} />
-            <div className="rounded-xl bg-secondary/30 px-3 py-2 text-xs text-muted-foreground flex items-center">Для S ×0.9, L ×1.1, XL ×1.22</div>
-            <FInput label="Налоги, ₽ на изделие"    type="number" value={costDraft.taxes}     onChange={v => setCostDraft(p => ({ ...p, taxes:     Number(v) }))} />
-            <FInput label="Реклама, ₽ на изделие"   type="number" value={costDraft.marketing} onChange={v => setCostDraft(p => ({ ...p, marketing: Number(v) }))} />
-            <FInput label="Логистика, ₽ на изделие" type="number" value={costDraft.logistics} onChange={v => setCostDraft(p => ({ ...p, logistics: Number(v) }))} />
-            <div className="rounded-xl border border-accent/30 bg-accent/[0.06] px-4 py-3">
-              <div className="text-xs text-muted-foreground">Итого накладные (M)</div>
-              <div className="mt-1 font-display text-2xl font-medium text-accent">
-                {fmt(costDraft.labor + costDraft.taxes + costDraft.marketing + costDraft.logistics)}
-              </div>
-            </div>
-          </div>
-        </Modal>
-      )}
-
-      {/* Модалка: коэффициенты размеров */}
-      {editSizes && (
-        <Modal title="Коэффициенты размеров" onClose={() => setEditSizes(false)} onSave={saveSizeEdit}>
-          <div className="space-y-4">
-            <div className="rounded-xl bg-secondary/50 px-4 py-3 text-sm text-muted-foreground">
-              Коэффициент показывает, во сколько раз больше ткани и пошива уходит на размер относительно базового M = 1.0
-            </div>
-            <div className="overflow-hidden rounded-xl border border-border">
-              <table className="w-full text-sm">
-                <thead><tr className="border-b border-border bg-secondary/50 text-xs uppercase tracking-wider text-muted-foreground">
-                  <th className="px-4 py-3 text-left font-medium">Размер</th>
-                  <th className="px-4 py-3 text-left font-medium">Коэффициент</th>
-                  <th className="px-4 py-3 text-right font-medium text-muted-foreground/60">Пошив (₽)</th>
-                  <th className="px-4 py-3 text-right font-medium text-muted-foreground/60">Итого (₽)</th>
-                </tr></thead>
-                <tbody>
-                  {sizes.map(s => (
-                    <tr key={s} className="border-b border-border/60 last:border-0">
-                      <td className="px-4 py-3">
-                        <span className={`inline-flex h-7 w-9 items-center justify-center rounded-md text-xs font-semibold ${s==='M'?'bg-accent text-accent-foreground':'bg-primary text-primary-foreground'}`}>{s}</span>
-                        {s === 'M' && <span className="ml-2 text-xs text-muted-foreground">базовый</span>}
-                      </td>
-                      <td className="px-4 py-3">
-                        <input
-                          type="number" step="0.01" min="0.5" max="3"
-                          value={sizeDraft[s]}
-                          onChange={e => setSizeDraft(p => ({ ...p, [s]: Number(e.target.value) }))}
-                          className="w-24 rounded-lg border border-border bg-background px-3 py-1.5 text-sm tabular-nums focus:outline-none focus:ring-1 focus:ring-ring"
-                        />
-                      </td>
-                      <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">{fmt(Math.round(labor * sizeDraft[s]))}</td>
-                      <td className="px-4 py-3 text-right font-medium tabular-nums">
-                        {fmt(Math.round(
-                          matList.reduce((acc, m) => acc + m.pricePerUnit * m.perItem * (m.type === 'Ткань' ? sizeDraft[s] : 1), 0)
-                          + labor * sizeDraft[s] + ohTotal
-                        ))}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="rounded-xl border border-border bg-secondary/30 px-4 py-3 text-xs text-muted-foreground">
-              Итоговая себестоимость пересчитается после сохранения
-            </div>
-          </div>
-        </Modal>
-      )}
 
       {/* Модалка: редактирование материала */}
       {matModal.open && (
